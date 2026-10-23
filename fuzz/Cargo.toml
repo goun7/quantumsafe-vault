@@ -1,0 +1,67 @@
+[package]
+name = "qsv-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+hex = "0.4"
+serde_json = "1"
+# Same wire version + features as the workspace (root Cargo.toml
+# [workspace.dependencies]): the PSBT target parses with the EXACT
+# crate/feature set the CLI ships, incl. the base64 transport.
+bitcoin = { version = "0.32", features = ["rand-std", "base64"] }
+qsv-core = { path = "../crates/qsv-core" }
+qsv-cosigner = { path = "../crates/qsv-cosigner" }
+
+[[bin]]
+name = "attestation_doc"
+path = "fuzz_targets/attestation_doc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frame_json"
+path = "fuzz_targets/frame_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "slip39_share"
+path = "fuzz_targets/slip39_share.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "psbt_parse"
+path = "fuzz_targets/psbt_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "estate_letter"
+path = "fuzz_targets/estate_letter.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wots_kit_seal"
+path = "fuzz_targets/wots_kit_seal.rs"
+test = false
+doc = false
+bench = false
+
+# Standalone workspace: cargo-fuzz runs on nightly with libFuzzer and
+# must not leak into the root workspace's stable-gate graph (fmt/clippy/
+# test --workspace never see this package on purpose — the fuzz RUNS are
+# the gate, executed by scripts/fuzz_gate.sh).
+[workspace]

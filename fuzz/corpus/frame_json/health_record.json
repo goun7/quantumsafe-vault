@@ -1,0 +1,1 @@
+{"pid": 1, "bind": "127.0.0.1:3334", "transport": "plain", "vaults": ["bc1ptestvault"], "mirror_tip": 840000}

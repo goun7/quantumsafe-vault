@@ -1,0 +1,20 @@
+[package]
+name = "qsv-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "QuantumSafe-Vault Bitcoin node integration: real end-to-end vault lifecycle over bitcoind (regtest/signet) — fund, unvault, CSV settlement"
+
+[dependencies]
+qsv-core = { path = "../qsv-core", features = ["consensus"] }
+qsv-pqc = { path = "../qsv-pqc" }
+bitcoin.workspace = true
+secp256k1.workspace = true
+hex.workspace = true
+serde_json = "1"
+
+[dev-dependencies]
+bitcoind = { version = "0.42", features = ["download", "28_2"] }
+tempfile = "3"

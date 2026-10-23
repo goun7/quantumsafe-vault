@@ -1,0 +1,102 @@
+name: k1-tracker
+
+# BIP-360 (P2MR) K1 decision-gate watchdog (docs/11).
+#
+# Runs the OFFLINE audit on every push/PR (guards the snapshot block's
+# structural integrity, incl. the Round 30 implementation rows + K1
+# counter), and, twice a week, diffs the recorded snapshot against the
+# LIVE bip-0360.mediawiki header. A third watchdog (impl-watch) searches
+# rust-bitcoin for P2MR/BIP-360 activity — K1's "two independent
+# implementations" limb now has a mechanical early-warning too. Any
+# delta fails the job — GitHub emails the maintainers, which IS the
+# K1 re-evaluation trigger.
+#
+# The tracker refuses to auto-edit the snapshot: a BIP status change is a
+# protocol-level decision (Phase 4a–4e gates), not a file-formatting chore.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/11_p2mr_migration_plan.md'
+      - 'crates/qsv-core/src/bip360.rs'
+      - '.github/workflows/k1-tracker.yml'
+  pull_request:
+    paths:
+      - 'docs/11_p2mr_migration_plan.md'
+      - 'crates/qsv-core/src/bip360.rs'
+      - '.github/workflows/k1-tracker.yml'
+  schedule:
+    # Mondays and Thursdays, 06:37 UTC (off the hourly cron rush).
+    - cron: '37 6 * * 1,4'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  offline-audit:
+    name: K1 offline audit (docs/11 integrity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Build first so a compile error is reported as such, not as an
+      # audit failure.
+      - run: cargo build -p qsv-cli
+      # Exit 1 = the plan lost a required element (20-check offline audit,
+      # Round 30: incl. the Phase 4a implementation rows + K1 counter).
+      - run: cargo run -p qsv-cli -- bip360-status
+
+  online-diff:
+    name: K1 online diff (docs/11 vs live BIP-360)
+    runs-on: ubuntu-latest
+    # The offline audit is the cheaper gate; run it first.
+    needs: offline-audit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build -p qsv-cli
+      # Exit 1 = snapshot Δ live header → K1 re-evaluation is due. The job
+      # FAILS on purpose: the red X + email is the operator signal. It never
+      # rewrites docs/11 by itself (protocol decisions stay human-owned).
+      - name: Diff snapshot against the live BIP header
+        run: cargo run -p qsv-cli -- bip360-status --online
+      - name: K1 delta report (job already failed; enrich the failure)
+        if: failure()
+        run: |
+          echo "::error::K1 DELTA — docs/11 snapshot no longer matches the live BIP-360 header."
+          echo "1. Fetch the live header: curl -fsSL https://raw.githubusercontent.com/bitcoin/bips/master/bip-0360.mediawiki | head -20"
+          echo "2. Re-evaluate the K1 gate (docs/11 §K1): status/version changes, TWO independent implementations."
+          echo "3. Update the BIP360-SNAPSHOT block in docs/11 (the single English edition, enforced by tests)."
+          echo "4. Run: cargo test -p qsv-cli --test docs_sync  →  then update the retrieved: date."
+
+  impl-watch:
+    name: K1 impl watch (rust-bitcoin P2MR)
+    runs-on: ubuntu-latest
+    # Round 30 · P3 — the SECOND live diff: K1 needs TWO independent P2MR
+    # implementations, and rust-bitcoin is our address/PSBT stack, so any
+    # P2MR/BIP-360 activity in its tracker is the earliest upstream signal
+    # that docs/11's `impl-rust-bitcoin` row must be re-evaluated. The job
+    # FAILS on that signal (human decision — the tracker never rewrites the
+    # snapshot), and it ALSO fails on any network error: a watchdog that
+    # cannot see upstream must never look green.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Search rust-bitcoin for P2MR / BIP-360 activity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          resp=$(curl -fsSL --max-time 30 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/search/issues?q=repo:rust-bitcoin/rust-bitcoin+p2mr+OR+bip-360+in:title,body&per_page=10")
+          n=$(printf '%s' "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin)["total_count"])')
+          if [ "$n" -gt 0 ]; then
+            printf '%s' "$resp" | python3 -c 'import json,sys; [print(i["html_url"], "|", i["title"]) for i in json.load(sys.stdin)["items"]]'
+            echo "::error::rust-bitcoin carries $n P2MR/BIP-360 item(s) — re-evaluate the impl-rust-bitcoin row and the K1 implementation limb in docs/11."
+            exit 1
+          fi
+          echo "no P2MR/BIP-360 activity in rust-bitcoin — impl row stays 'none' (reviewed $(date -u +%F))"

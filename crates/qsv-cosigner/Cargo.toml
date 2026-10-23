@@ -1,0 +1,43 @@
+[package]
+name = "qsv-cosigner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "QuantumSafe-Vault enclave co-signer service: PQC-gated remote signing with TEE attestation (AWS Nitro Enclave / Intel TDX / localhost dev mode)"
+
+[features]
+# ENCLAVE BUILD ONLY: real NSM ioctl + AF_VSOCK transport. Requires a
+# Linux kernel with the Nitro Security Module (inside an AWS Nitro Enclave).
+nsm = []
+
+[dependencies]
+qsv-core = { path = "../qsv-core" }
+qsv-pqc = { path = "../qsv-pqc" }
+bitcoin.workspace = true
+secp256k1.workspace = true
+sha2.workspace = true
+hex.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# DEV-LOOPBACK TLS (docs/10 §3.5): the dev bridge must never ship
+# co-signatures in plaintext off loopback. aws_lc_rs is the single crypto
+# provider (already in the tree via bitcoind/bitreq) — no new native deps.
+rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs"] }
+x509-parser = { version = "0.16", default-features = false }
+aws-lc-rs = "1.18"
+# GRACEFUL SHUTDOWN (docs/10 §3.7, Round 17): SIGTERM/SIGINT handlers for
+# the accept loops. std has no signal API; the workspace is std-only by
+# design (no tokio, no signal-hook state machine) — libc's `signal(2)`
+# with an async-signal-safe AtomicBool store is the whole story. Already
+# in the dependency tree (transitive via bitcoind/bitreq), so this adds
+# no new native code.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+# Self-signed loopback certs for the TLS unit test (cached, no network).
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
+proptest = "1.11"

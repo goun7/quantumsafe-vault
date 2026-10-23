@@ -1,0 +1,16 @@
+# Automated sweep equivalence list (docs/10 §4.57).
+#
+# A mechanical mutant that survives EVERY applicable suite is either a
+# test gap (add a test — preferred) or an EQUIVALENT mutant (the code
+# change cannot alter behavior reachable by tests). Equivalents are
+# allowed ONLY with a written reason on this line:
+#
+#   <mutant-name> :: <why it cannot change behavior>
+#
+# Format: `<basename>_<pattern> :: reason` (mutant names are printed by
+# scripts/mutation_sweep.sh as `S-<basename>_<pattern>`; the leading
+# `S-` is stripped here). An empty list means every mechanical mutant
+# died — the honest default; entries below are review records, not
+# escapes.
+
+vsock_lt :: `if n < 0` in the raw AF_VSOCK syscall wrappers (VsockStream Read/Write): the flip turns the `Ok(0)` EOF edge into an Err with a stale errno, changing only the error MESSAGE — both sides reach `read_exact`/`write_all`, which turn EOF and Err alike into a fail-closed `VsockError::Io` before any frame is returned (no frame, no state); the AF_VSOCK path is hardware-gated (only inside a real Nitro enclave, `NITRO_E2E=FULL` needs the device) so no test in this tree can execute it — reviewed Round 32.

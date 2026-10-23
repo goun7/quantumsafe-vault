@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/qsv-core",
+    "crates/qsv-pqc",
+    "crates/qsv-cli",
+    "crates/qsv-cosigner",
+    "crates/qsv-node",
+]
+
+[workspace.package]
+version = "2026.3.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/quantumsafe/vault"
+authors = ["QuantumSafe-Vault Engineering"]
+
+[workspace.dependencies]
+bitcoin = { version = "0.32", features = ["rand-std", "base64"] }
+miniscript = { version = "13.1", features = ["compiler"] }
+secp256k1 = { version = "0.29", features = ["rand-std"] }
+sha2 = "0.10"
+hex = "0.4"
+ml-dsa = { version = "0.1", features = ["getrandom", "rand_core"] }
+bitcoinconsensus = "0.106"
+
+[profile.release]
+lto = true
+codegen-units = 1

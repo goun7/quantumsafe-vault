@@ -1,0 +1,7 @@
+# Enclave build context hygiene: the Dockerfile COPYs Cargo manifests +
+# crates/ only — keep the gigabytes out of the context tarball.
+target/
+.git/
+docs/
+fuzz/
+**/target/

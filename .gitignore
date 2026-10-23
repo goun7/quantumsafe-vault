@@ -1,0 +1,57 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Cargo
+Cargo.lock.bak
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local secrets / provisioning
+*.key
+*.seed
+*.pem
+qsv-cosigner-provisioning.json
+# …but the attestation fixtures are PUBLIC trust anchors, dev
+# certificates, and ONE deliberately-published throwaway dev key
+# (`dev_leaf_key.pkcs8` — the simulated enclave signer, gated behind
+# `#[cfg(not(feature = "nsm"))]` and documented as “NOT a security
+# boundary” in nsm.rs `dev_identity`); none of them is a secret, and the
+# build embeds them via include_str!/include_bytes! — a fresh clone must
+# compile. See SECURITY.md §3.
+!crates/qsv-cosigner/attestation/*.pem
+# Enclave e2e build artifacts (generated allowlist Dockerfile + EIF)
+crates/qsv-cosigner/enclave/Dockerfile.gen
+target/eif/
+
+# Signet live-lap artifacts (PSBT/hex/rotation state — never commit live material)
+/signet-artifacts/
+
+# Fuzzing (cargo-fuzz: build output, evolving corpus cache, crash artifacts)
+/fuzz/target/
+/fuzz/artifacts/
+# The libFuzzer-EVOLVED corpus entries (64-hex names) are a local cache;
+# the CURATED seeds (named files: real mnemonics, real-size frames,
+# regression inputs) are the committed contract.
+/fuzz/corpus/*/[0-9a-f]*
+
+# Test artifacts
+*.log
+
+# Freebuff workspace metadata
+.freebuff/
+
+# Internal working records (round evaluations, handoff, launch drafts).
+# Local only: never published. Public status lives in STATUS.md and
+# ROADMAP.md.
+/.internal/

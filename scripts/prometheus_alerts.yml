@@ -1,0 +1,203 @@
+# QuantumSafe-Vault co-signer alert rules (docs/10 §4.25).
+#
+# Load with:
+#   rule_files:
+#     - /etc/prometheus/rules/qsv-cosigner.rules.yml
+#
+# Scrape target (the bridge speaks the Prometheus text exposition on its
+# own listener — no exporter process in between):
+#   - job_name: qsv-cosigner-bridge
+#     metrics_path: /metrics
+#     static_configs:
+#       - targets: ["127.0.0.1:3334"]
+#     # Off loopback the bridge REFUSES an open scrape (Round 20): the
+#     # counters name every vault and expose which one the watchtower
+#     # froze. Send the token, never a plain GET:
+#     #     authorization:
+#     #       type: Bearer
+#     #       credentials: <X-QSV-Metrics-Token value>
+#
+# Every metric name below is cross-checked against the exposition in
+# crates/qsv-cli/tests/monitoring_assets.rs: a rule naming a family the
+# bridge never exports fails the build (a Prometheus rule on a series
+# nobody produces is silently dead).
+
+groups:
+  - name: qsv-cosigner-liveness
+    rules:
+      - alert: QsvCosignerBridgeDown
+        expr: up{job="qsv-cosigner-bridge"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Co-signer bridge unreachable on {{ $labels.instance }}"
+          description: >-
+            The co-signer scrape target has been down for 2 minutes. Every
+            rotation/inheritance refresh that needs a co-signature is
+            blocking until it returns. Check `systemctl status
+            qsv-cosigner-bridge` and `qsv-cli doctor`.
+
+      - alert: QsvCosignerScrapeDenials
+        expr: increase(qsv_cosigner_metrics_denied_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Someone is knocking at the metrics gate ({{ $labels.instance }})"
+          description: >-
+            GET /metrics was refused for a missing or wrong
+            X-QSV-Metrics-Token. Either a scanner found the port or the
+            scrape credentials were rotated without updating Prometheus —
+            in the latter case monitoring is BLIND and the other rules
+            below cannot fire. Rotate the token with the bridge, then the
+            Prometheus job.
+
+      - alert: QsvCosignerTokenRotationStalled
+        expr: increase(qsv_cosigner_rotate_denied_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scrape-token rotation refused — reload is stalled"
+          description: >-
+            A reload was refused in the last 15 minutes: the gate will
+            not arm/empty itself (armedness is a boot decision) or the
+            token file yielded nothing usable, so the PREVIOUS
+            X-QSV-Metrics-Token is still the live secret while the
+            operator believes a new one is in force. Nothing fails yet —
+            scraping keeps working with the old token — which is exactly
+            why this is a silent state. Fix the token file (non-empty,
+            mode 600), then `systemctl reload qsv-cosigner-bridge`, and
+            confirm the counter stops increasing.
+
+      - alert: QsvCosignerIdle
+        expr: increase(qsv_cosigner_requests_total[30m]) == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Co-signer idle for 30 minutes ({{ $labels.instance }})"
+          description: >-
+            No sign request reached the gate in 30 minutes. Expected on a
+            long heartbeat cadence (a refresh is due every ~12,960 blocks);
+            a co-signer nobody asks for 30 minutes straight after an
+            incident usually means the bridge is bound but its clients are
+            gone.
+
+  - name: qsv-cosigner-safety
+    rules:
+      - alert: QsvCosignerAlarmFreeze
+        expr: increase(qsv_cosigner_alarm_refused_total[5m]) > 0
+        # Explicit 0s: a freeze blocks that vault RIGHT NOW — one refused
+        # co-signature is already actionable, a dwell would only delay the
+        # page. Every other rule below keeps a real dwell.
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Watchtower froze signing — refusals are being served"
+          description: >-
+            The alarm mirror from watchtower-state.json refused at least
+            one co-signature in the last 5 minutes. This is the designed
+            fail-closed path (Theorem 1 holds, nothing was released). Read
+            the vault's verdict with `qsv-cli doctor`, then run the
+            watchtower pass — do NOT bypass the freeze.
+
+      - alert: QsvCosignerVaultFrozen
+        expr: increase(qsv_cosigner_alarm_refused_by_vault_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vault {{ $labels.vault }} is frozen by the watchtower"
+          description: >-
+            This specific vault has had co-signatures refused by the alarm
+            freeze for 15 minutes. Every refresh/rotation for
+            {{ $labels.vault }} is blocked until the verdict clears.
+
+      - alert: QsvCosignerRefusalDominates
+        expr: >-
+          sum(rate(qsv_cosigner_refused_total[10m]))
+            / clamp_min(sum(rate(qsv_cosigner_requests_total[10m])), 0.001) > 0.9
+          and sum(rate(qsv_cosigner_requests_total[10m])) > 0.001
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 90% of co-signer requests are being refused"
+          description: >-
+            The gate is working but something upstream is wrong (a stale
+            PQC key, a protocol-version skew, a vault that was never
+            provisioned). Read the per-vault breakdown:
+            qsv_cosigner_refused_by_vault_total.
+
+  - name: qsv-cosigner-capacity
+    rules:
+      - alert: QsvCosignerCapacitySaturation
+        expr: rate(qsv_cosigner_capacity_refused_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Co-signer connection cap is rejecting clients"
+          description: >-
+            Connections were closed without a reply because every
+            in-flight worker slot was taken (--max-inflight). Legitimate
+            clients are being shed. Either the box is undersized or
+            something is flooding the port; raise the cap only after
+            checking the host's thread/fd budget.
+
+      # ROUND 25: the guard is `> 1`, not `> 0`. The serial accept loop
+      # publishes an honest ceiling of 1 (it serves one connection at a
+      # time) and its peak reaches 1 on the very first request — with a
+      # `> 0` guard every serial deployment would page 5m after boot for
+      # the crime of doing its job. A ceiling of exactly 1 CANNOT be
+      # 80% saturated in any operationally meaningful sense; a serial
+      # loop's overload signal is serve latency, not thread count.
+      - alert: QsvCosignerWorkerSaturation
+        expr: >-
+          qsv_cosigner_worker_limit > 1
+            and qsv_cosigner_workers_peak
+              > 0.8 * qsv_cosigner_worker_limit
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Co-signer is running close to its --max-inflight ceiling"
+          description: >-
+            The high-water mark of concurrent TLS workers reached 80% of
+            the configured cap. Nothing is being shed yet
+            (qsv_cosigner_capacity_refused_total is still flat), but the
+            next burst will be: past the cap every connection is closed
+            without a reply. Raise --max-inflight only after checking the
+            host's thread/fd budget — the peak is a gauge, so it says how
+            much headroom is really left.
+
+      - alert: QsvCosignerRateLimitStorm
+        expr: rate(qsv_cosigner_rate_limited_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Per-vault token bucket is shedding load"
+          description: >-
+            One or more vaults are signing faster than their configured
+            budget. Either a client is looping, or the budget is too tight
+            for a legitimate rotation window. Read the per-vault rows:
+            qsv_cosigner_rate_limited_by_vault_total.
+
+      - alert: QsvCosignerServeLatencyHigh
+        expr: >-
+          histogram_quantile(0.99,
+            sum by (le) (rate(qsv_cosigner_serve_latency_us_bucket[5m]))) > 5e6
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p99 co-signer serve latency above 5s"
+          description: >-
+            The gate is answering but slowly — a signing client is at the
+            edge of its --frame-timeout budget (default 10s). Above that
+            budget the connection is dropped mid-request, which looks like
+            an outage to the client but never to this alert.

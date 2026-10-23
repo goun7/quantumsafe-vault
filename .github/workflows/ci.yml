@@ -1,0 +1,251 @@
+name: ci
+
+# QuantumSafe-Vault main CI (docs/09 §9 acceptance threshold, automated).
+#
+# Every push/PR runs the EXACT local gate:
+#   1. cargo fmt --check
+#   2. cargo clippy -D warnings in THREE configurations
+#      (workspace, workspace+consensus, cosigner nsm)
+#   3. cargo test --workspace in TWO configurations
+#      (292 tests each — including the real-bitcoind live e2e flows)
+#   4. the mutation audit: every deliberately injected crypto/logic
+#      mutation must be KILLED by the test matrix (behavioral proof).
+#   5. the webhook relay drill: the full HMAC+replay refusal map
+#      (204/401/400 paths, upstream 502, graceful SIGTERM) against the
+#      reference relay.
+#   6. the monitoring drill: rules/dashboard load, promtool --lint all
+#      (real PromQL parser, PROMTOOL_REQUIRED) and every named family
+#      is a series the bridge exports.
+#   7. the capacity gate: the bench --baseline machinery is exercised
+#      end to end (round-trip pass, 100x regression refused exit 1,
+#      malformed baseline refused exit 2 with empty stdout) so a
+#      release cannot ship a silent throughput regression.
+#   8. the security audit: RustSec (cargo audit fails on any
+#      vulnerability; one documented ignore — atomic-polyfill, never
+#      built on our targets), cargo-deny (license whitelist, bans,
+#      registry-only sources via deny.toml) + the secret scan (no
+#      credential material in the working tree or in the full git
+#      history).# 9. the fuzz gate: six untrusted-input parsers (attestation
+#    CBOR/COSE, frame/health/watchtower JSON, SLIP-39, PSBT in raw
+#    + base64 transport, the estate letter, and the WOTS+/kit-seal
+#    emergency path) under libFuzzer for a bounded window —
+#    any panic, hang or crash artifact fails.
+#   10. the coverage gate: `cargo llvm-cov` line coverage must meet
+#      the committed floor in scripts/coverage_gate.sh (one number,
+#      same script locally and here — Round 29 raised it to 91%).
+#
+# The BIP-360 K1 watchdog keeps its own workflow (k1-tracker.yml) with its
+# twice-weekly live-BIP diff schedule — untouched by this pipeline.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy (${{ matrix.cfg }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cfg:
+          - workspace
+          - workspace+consensus
+          - cosigner+nsm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        if: matrix.cfg == 'workspace'
+      - run: cargo clippy --workspace --all-targets --features qsv-core/consensus -- -D warnings
+        if: matrix.cfg == 'workspace+consensus'
+      - run: cargo clippy -p qsv-cosigner --all-targets --features nsm -- -D warnings
+        if: matrix.cfg == 'cosigner+nsm'
+
+  test:
+    name: test (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - features: ""
+          - features: "qsv-core/consensus"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The live e2e suites download bitcoind v28.2 via the `bitcoind` dev
+      # dependency (feature "download") — no system packages needed.
+      - run: cargo test --workspace ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }}
+      # NO BITCOIND_SKIP_DOWNLOAD here — bitcoind 0.41.0 treats the env
+      # var's PRESENCE as "skip" (lib.rs downloaded_exe_path checks
+      # var_os().is_some(), ignoring the value), so the former
+      # `BITCOIND_SKIP_DOWNLOAD: "0"` silently turned every live regtest
+      # e2e into a 0.00s early return (green but hollow — found Round 29).
+      # Unset = each leg downloads its own v28.2 via the dev-dependency.
+
+  e2e-node:
+    name: e2e (bitcoind v28.2 lifecycle)
+    runs-on: ubuntu-latest
+    # The qsv-node lifecycle e2e with --nocapture: the reference integration
+    # script (mine → fund → unvault → CSV → settle) on a real node.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p qsv-node --test e2e_bitcoind -- --nocapture
+
+  relay-drill:
+    name: relay drill (webhook HMAC + replay contract)
+    runs-on: ubuntu-latest
+    # The reference relay's refusal map end to end: fresh → 204, replay →
+    # 401, tampered → 401, unsigned/stampless → 400, stale/bearer → 401,
+    # dead upstream → 502 (daemon retries toward the pager), SIGTERM → 0.
+    # Standard tools only (python3 + curl), no cargo build.
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/webhook_relay_drill.sh
+
+  monitoring-drill:
+    name: monitoring drill (alert rules + dashboard vs exposition)
+    runs-on: ubuntu-latest
+    # The operator assets must LOAD (yaml/json) and must only name metric
+    # families the bridge exports — a rule on a series nobody produces is
+    # silently dead. promtool --lint all parses every PromQL expression
+    # with the REAL Prometheus parser (via docker: no apt dependency).
+    steps:
+      - uses: actions/checkout@v4
+      - run: PROMTOOL_REQUIRED=1 bash scripts/monitoring_drill.sh
+
+  capacity-gate:
+    name: capacity gate (bench baseline machinery)
+    runs-on: ubuntu-latest
+    # `bench --baseline` is the release gate against silent throughput
+    # regressions. This drill runs the REAL binary through all three
+    # verdicts on every push: a round-trip baseline PASSES, a 100x
+    # inflated baseline FAILS (exit 1, REGRESSION: on stdout), a
+    # malformed baseline is REFUSED (exit 2, empty stdout).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: bash scripts/capacity_gate.sh
+
+  security-audit:
+    name: security audit (RustSec + cargo-deny + secret scan)
+    runs-on: ubuntu-latest
+    # A vulnerable dependency or a credential in history is a release
+    # blocker. `cargo audit` exits non-zero on any RustSec
+    # VULNERABILITY; the ignores below are the documented ones —
+    # RUSTSEC-2023-0089 (atomic-polyfill: target-gated to MCUs, never
+    # compiled on x86_64/aarch64) and RUSTSEC-2026-0367/0368/0369 (zip:
+    # BUILD-time-only dep of the bitcoind TEST harness, fixed line
+    # >=9.0.0 unreachable — the newest harness release 0.42.0 still
+    # requires ^0.6.6; full reasoning + re-evaluation rule in deny.toml).
+    # Same flags in scripts/round_gate.sh (gate equality).
+    # cargo-deny enforces the license
+    # whitelist/bans/sources policy; the secret scan fails on
+    # credential material in the tree OR anywhere in the history a
+    # clone would receive — hence fetch-depth: 0.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      - run: cargo audit --ignore RUSTSEC-2023-0089 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny check
+      - run: bash scripts/secret_scan.sh
+
+  fuzz-gate:
+    name: fuzz gate (6 parsers, bounded)
+    runs-on: ubuntu-latest
+    # The regression gate of scripts/fuzz_gate.sh: the parsers must
+    # STAY panic-free. Bounded on purpose (120s/target, 10s per input)
+    # — a research campaign belongs on a dedicated machine, not on
+    # every push. Curated seeds ship with the repo; the EVOLVED corpus
+    # is cached between runs (actions/cache on fuzz/corpus) so each
+    # run starts where the previous one left off; crash artifacts
+    # never ship.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      # Round 39: the `taiki-e/install-action@cargo-fuzz` shortcut reported
+      # success in 20 ms without putting the binary on PATH, so every one of
+      # the six targets died with "no such command: fuzz" — a red job whose
+      # message blamed the parsers. Install explicitly (rust-cache persists
+      # ~/.cargo/bin between runs) and PROVE the binary answers before the
+      # gate starts.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: fuzz/target
+      - name: Install cargo-fuzz
+        run: |
+          command -v cargo-fuzz >/dev/null || cargo install cargo-fuzz --locked
+          cargo fuzz --version
+      - uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ runner.os }}-${{ hashFiles('fuzz/corpus/**') }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-
+      - run: FUZZ_SECONDS=120 bash scripts/fuzz_gate.sh
+
+  mutation-audit:
+    name: mutation audit (54 injected mutants)
+    runs-on: ubuntu-latest
+    # The audit is the most expensive gate; it is the FINAL quality bar and
+    # only runs once the plain suite is green.
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Restores every file it mutates; exits 1 if ANY mutation survives.
+      - run: bash scripts/mutation_audit.sh
+      # Round 32: the automated wall — every product file must carry a
+      # hand mutant, a mechanical mutant, or a written allowlist reason.
+      - run: bash scripts/mutation_sweep.sh
+
+  coverage:
+    name: coverage (llvm-cov line floor)
+    runs-on: ubuntu-latest
+    # The floor lives in scripts/coverage_gate.sh (single number, shared
+    # with the local round gate). Runs after the plain suite: a coverage
+    # run is a full instrumented rebuild + test pass, the priciest step
+    # that still belongs on every push.
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      # Same shortcut-action trap as the fuzz leg: prove the binary answers
+      # (rust-cache keeps ~/.cargo/bin warm across runs).
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        run: |
+          command -v cargo-llvm-cov >/dev/null || cargo install cargo-llvm-cov --locked
+          cargo llvm-cov --version
+      - run: bash scripts/coverage_gate.sh

@@ -1,0 +1,274 @@
+{
+  "__comment": "QuantumSafe-Vault co-signer dashboard (docs/10 §4.25). Import via Grafana → Dashboards → Import, JSON model number on the dashboard page. Every metric name is cross-checked against the bridge exposition by crates/qsv-cli/tests/monitoring_assets.rs.",
+  "uid": "qsv-cosigner",
+  "title": "QuantumSafe-Vault · Co-signer",
+  "tags": ["quantumsafe-vault", "cosigner", "bitcoin"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(qsv_cosigner_requests_total, instance)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "current": {}
+      },
+      {
+        "name": "vault",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(qsv_cosigner_refused_by_vault_total, vault)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Co-signer gate · lifetime totals",
+      "description": "accepted + refused always equals requests: a request that is missing from the counter is structurally impossible by design.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "qsv_cosigner_requests_total{instance=~\"$instance\"}",
+          "legendFormat": "requests"
+        },
+        {
+          "refId": "B",
+          "expr": "qsv_cosigner_accepted_total{instance=~\"$instance\"}",
+          "legendFormat": "released"
+        },
+        {
+          "refId": "C",
+          "expr": "qsv_cosigner_refused_total{instance=~\"$instance\"}",
+          "legendFormat": "refused"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Throughput · released vs refused (5m rate)",
+      "description": "A refused burst with no traffic behind it is a watchtower freeze or an unprovisioned vault — never a released key.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(qsv_cosigner_requests_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "requests"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(qsv_cosigner_accepted_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "released"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(qsv_cosigner_refused_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "refused"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Watchtower alarm freezes (5m rate)",
+      "description": "Every point here is a co-signature the gate REFUSED on purpose. This is the designed fail-closed path, not an outage.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(qsv_cosigner_alarm_refused_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "alarm refusals"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(qsv_cosigner_alarm_refused_by_vault_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "{{vault}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-vault refusals (5m rate)",
+      "description": "Which estate member is being turned away, and why (gate branch). The unprovisioned-vault signature is a misconfigured client, not an attack.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(qsv_cosigner_refused_by_vault_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "{{vault}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-vault releases (5m rate)",
+      "description": "Which vault actually consumed the co-signer — the sign that the rotation path is working end to end.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(qsv_cosigner_accepted_by_vault_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "{{vault}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Serve latency percentiles",
+      "description": "p99 above the --frame-timeout budget (default 10s) means clients are being dropped mid-request: the connection fails while the gate is still working.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "unit": "µs",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(qsv_cosigner_serve_latency_us_bucket{instance=~\"$instance\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(qsv_cosigner_serve_latency_us_bucket{instance=~\"$instance\"}[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(qsv_cosigner_serve_latency_us_bucket{instance=~\"$instance\"}[5m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Shedding · capacity, rate limit, scrape denials",
+      "description": "How load is being turned away. capacity_refused = the in-flight cap was full (a flood); rate_limited = a vault exceeded its own token bucket; metrics_denied = someone knocked at the scrape gate.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(qsv_cosigner_capacity_refused_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "capacity refused"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(qsv_cosigner_rate_limited_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "rate limited"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(qsv_cosigner_metrics_denied_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "scrape denied"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-vault rate-limit refusals (5m rate)",
+      "description": "A single vault flooding its own budget — the per-vault limiter means it can never consume a sibling's budget.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(qsv_cosigner_rate_limited_by_vault_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "{{vault}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Target health",
+      "description": "up = 0 means the bridge is unreachable. If this is red while the co-signer serves, the scrape token is wrong and every other panel here is stale.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"qsv-cosigner-bridge\", instance=~\"$instance\"}",
+          "legendFormat": "up"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Scrape-token rotation refusals",
+      "description": "systemctl reload did not move the gate — the previous token stays live, so a rotation the operator believes happened never did (Round 23).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(qsv_cosigner_rotate_denied_total{instance=~\"$instance\"}[15m])",
+          "legendFormat": "rotations refused"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Scrape-token rotations · landed vs refused",
+      "description": "Did my reload actually land? The landed counter is the confirmation that Prometheus is scraping with the NEW secret; the refused one is the alert's input (Round 24).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(qsv_cosigner_rotate_total{instance=~\"$instance\"}[15m])",
+          "legendFormat": "rotations landed"
+        },
+        {
+          "refId": "B",
+          "expr": "increase(qsv_cosigner_rotate_denied_total{instance=~\"$instance\"}[15m])",
+          "legendFormat": "rotations refused"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Worker occupancy vs --max-inflight ceiling",
+      "description": "What the capacity budget is actually spent on: active workers right now, the high-water mark since boot, and the configured limit the saturation alert compares against (Round 24).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 45 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "qsv_cosigner_workers_active{instance=~\"$instance\"}",
+          "legendFormat": "active now"
+        },
+        {
+          "refId": "B",
+          "expr": "qsv_cosigner_workers_peak{instance=~\"$instance\"}",
+          "legendFormat": "peak since boot"
+        },
+        {
+          "refId": "C",
+          "expr": "qsv_cosigner_worker_limit{instance=~\"$instance\"}",
+          "legendFormat": "--max-inflight limit"
+        }
+      ]
+    }
+  ]
+}
