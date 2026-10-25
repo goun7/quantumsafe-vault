@@ -17,8 +17,8 @@ version line is calendar-based (`vYYYY.M.P`), matching the workspace
   `qsv-demo/v1` document (absolute `out`, `bytes`, `html_sha256`, address,
   letter hash, `elapsed_ms`). Measured: 6–8 ms, 9,272-byte page (release).
 - **Release pipeline** (`.github/workflows/release.yml`, tag `v*` or manual
-  dry run): five targets — x86_64/aarch64 Linux, x86_64/aarch64 macOS,
-  x86_64 Windows — each built `--locked`; the binary's `--version` must equal
+  dry run): four targets — x86_64/aarch64 Linux, x86_64/aarch64 macOS — each
+  built `--locked`; the binary's `--version` must equal
   the tag; every target that can run on its own runner executes the offline
   first run before packaging; one `SHA256SUMS` over all archives, recomputed
   from disk, plus GitHub build provenance (Sigstore keyless) for the archives
@@ -36,6 +36,18 @@ version line is calendar-based (`vYYYY.M.P`), matching the workspace
   the faucet script logged its claim lines in Turkish (an address label and a
   missing-value message).
 - Test count 507 → **512** (4 first-run + 1 source-level wall).
+- **Windows is not a target** — the first release dry run proved it: the
+  co-signer's vsock/signal code is `std::os::unix`, so a Windows build dies at
+  `qsv-cosigner`. Removed from the matrix and stated in docs/10 §4.65 instead
+  of shipping a red platform.
+- **Audit repairs (same round):** `heartbeat::tick` — the scheduler entry
+  point the docs present as a cron target — signed the refresh witness as
+  `[σ_user, σ_enclave]`, which libbitcoinconsensus rejects
+  (`ScriptFailed(0)`); no test had ever run the reference engine over that
+  path. Fixed, with `tick_output_is_valid_under_consensus` as the wall.
+  `consensus::verify_transaction` also re-labelled every script rejection as
+  an `Encode` error, hiding the only verdict that means "the network would
+  refuse this"; the multi-input path now keeps `ScriptFailed`.
 
 ### Added — `docs-audit`, the single English edition (Round 40)
 

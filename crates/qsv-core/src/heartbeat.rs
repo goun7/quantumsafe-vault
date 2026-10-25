@@ -169,8 +169,13 @@ pub fn sign_refresh_tx(
         );
         unvault::sign_schnorr(user_keypair, &sh).to_vec()
     };
+    // Witness order `[σ_enclave, σ_user]`: `<pk_user> CHECKSIGVERIFY
+    // <pk_enclave> CHECKSIG` pops the stack TOP first, so σ_enclave is the
+    // DEEPEST element. (Round 41: this arm had the two swapped, so every
+    // transaction the documented cron entry point produced was rejected by
+    // libbitcoinconsensus — see `tick_output_is_valid_under_consensus`.)
     refresh.input[0].witness = unvault::build_script_path_witness(
-        &[sig_user, enclave_sig.to_vec()],
+        &[enclave_sig.to_vec(), sig_user],
         ctx.script,
         ctx.control_block,
     );
@@ -360,5 +365,42 @@ mod tests {
             HeartbeatError::InsufficientFunds.to_string(),
             "value too low for refresh fee"
         );
+    }
+
+    /// Round 41 (audit): the scheduler entry point a cron timer calls must
+    /// produce what the NETWORK accepts, not just a four-element witness.
+    /// The witness is `[σ_enclave, σ_user]`; with the two swapped the real
+    /// interpreter rejects the spend (`ScriptFailed(0)`), which no unit test
+    /// noticed because none ran the reference engine over this path.
+    #[cfg(feature = "consensus")]
+    #[test]
+    fn tick_output_is_valid_under_consensus() {
+        let p = HeartbeatPolicy::default();
+        let v = vault();
+        let spk = v.script_pubkey();
+        let outpoint = OutPoint::new(Txid::from_byte_array([0x55u8; 32]), 0);
+        let value = Amount::from_sat(90_000);
+
+        // The sighash is witness-independent: sign it, then let `tick` build.
+        let unsigned = build_refresh_tx(&v, outpoint, value, Amount::from_sat(1_000)).unwrap();
+        let sighash =
+            crate::unvault::script_spend_sighash(&unsigned, 0, &v.leaves.normal, value, &spk);
+        let enclave_sig = crate::unvault::sign_schnorr(&demo_keys::enclave_keypair(), &sighash);
+
+        let tx = tick(HeartbeatTick {
+            policy: &p,
+            vault: &v,
+            last_refresh_block: 500_000,
+            current_block: 500_000 + 12_960,
+            vault_outpoint: outpoint,
+            vault_value: value,
+            user_keypair: &demo_keys::user_keypair(),
+            enclave_sig,
+        })
+        .unwrap()
+        .expect("refresh must be produced");
+
+        crate::consensus::verify_input(&tx, 0, &spk, value)
+            .expect("the reference interpreter must accept the scheduler's refresh");
     }
 }

@@ -83,8 +83,11 @@ pub fn verify_transaction(
             )
             // ERR_SCRIPT is code 0 (the C library's "no code set"), so the
             // numeric value IS the enum discriminant for every variant.
-            .map_err(|e| VerifyError::ScriptFailed(e as i32))
-            .map_err(|e| VerifyError::Encode(format!("input {i}: {e}")))?;
+            // (Round 41: a second `map_err` re-labelled every rejection as an
+            // Encode error, so a caller matching on ScriptFailed — the only
+            // variant that means "the network would refuse this" — could never
+            // see it.)
+            .map_err(|e| VerifyError::ScriptFailed(e as i32))?;
         }
         Ok(())
     }
@@ -169,6 +172,48 @@ mod tests {
         assert!(
             matches!(err, VerifyError::Encode(_)),
             "count mismatch must fail as an Encode error, got {err:?}"
+        );
+    }
+
+    /// Round 41 (audit): a REJECTED script must surface as the consensus
+    /// verdict, never as an encode error — the multi-input path used to
+    /// re-label every refusal, hiding "the network would refuse this" behind
+    /// "serialization broke".
+    #[cfg(feature = "consensus")]
+    #[test]
+    fn verify_transaction_reports_the_script_verdict_not_an_encode_error() {
+        let tx = bitcoin::Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![
+                TxIn {
+                    previous_output: bitcoin::OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: bitcoin::Witness::new(),
+                },
+                TxIn {
+                    previous_output: bitcoin::OutPoint::null(),
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: bitcoin::Witness::new(),
+                },
+            ],
+            output: vec![TxOut {
+                value: Amount::from_sat(1_000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+        // OP_RETURN as a prevout script: unspendable under any witness.
+        let unspendable = ScriptBuf::from_bytes(vec![0x6a]);
+        let prevouts = vec![
+            (unspendable.clone(), Amount::from_sat(10_000)),
+            (unspendable, Amount::from_sat(10_000)),
+        ];
+        let err = verify_transaction(&tx, &prevouts).expect_err("OP_RETURN cannot be spent");
+        assert!(
+            matches!(err, VerifyError::ScriptFailed(_)),
+            "a script rejection must stay a ScriptFailed verdict, got {err:?}"
         );
     }
 }

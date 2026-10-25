@@ -50,8 +50,8 @@ Rust 1.85+ → cargo build --release → bitcoind + RPC credentials → two hard
 
 What shipped:
 
-- **Prebuilt single-file archives** for x86_64/aarch64 Linux, x86_64/aarch64
-  macOS and x86_64 Windows, built `--locked` by
+- **Prebuilt single-file archives** for x86_64/aarch64 Linux and
+  x86_64/aarch64 macOS, built `--locked` by
   [`.github/workflows/release.yml`](.github/workflows/release.yml). The
   binary's `--version` must equal the tag, and every target that can execute
   on its own runner runs the offline first run before packaging.
@@ -62,6 +62,11 @@ What shipped:
   2 incomplete; a check that cannot run is never a pass.
 - `qsv-cli console --descriptor …` already refuses a descriptor that is not
   this vault's (D1).
+
+Beyond the signature, **Windows** is not claimed either: the co-signer crate
+is Unix-only (`std::os::unix` for vsock and signals), so a Windows target does
+not compile. It was removed from the matrix in the same round the dry run
+proved it, rather than left as a red badge.
 
 What is deliberately NOT claimed: a GPG signature over the binaries. That
 needs the maintainer's private key, which does not belong on a runner. The

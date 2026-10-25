@@ -5,6 +5,10 @@ name: release
 #
 # What this pipeline PROVES, and what it does not:
 #   * every archive is built here, from this commit, with `--locked`;
+#   * the platform list is the list that actually BUILDS: Windows was in the
+#     first draft of this matrix and failed at `std::os::unix` in the
+#     co-signer (vsock/signals) — the crate is Unix-only, so the target was
+#     removed rather than shipped broken;
 #   * the binary's `--version` must equal the tag, or the release fails
 #     (an archive named vX that reports Y is worse than no archive);
 #   * the offline first run is executed for every target that can run on its
@@ -57,23 +61,15 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
             native: true
-            archive: tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04-arm
             native: true
-            archive: tar.gz
           - target: x86_64-apple-darwin
             os: macos-latest
             native: false # cross-built on the arm64 runner
-            archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
             native: true
-            archive: tar.gz
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            native: true
-            archive: zip
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -93,7 +89,6 @@ jobs:
         run: |
           set -euo pipefail
           bin="target/$TARGET/release/qsv-cli"
-          [ "$TARGET" = "x86_64-pc-windows-msvc" ] && bin="$bin.exe"
           got="$("$bin" --version | awk '{print $2}')"
           want="${REF_NAME#v}"
           # A workflow_dispatch run on a branch has no version-shaped ref:
@@ -112,7 +107,6 @@ jobs:
         run: |
           set -euo pipefail
           bin="$GITHUB_WORKSPACE/target/$TARGET/release/qsv-cli"
-          [ "$TARGET" = "x86_64-pc-windows-msvc" ] && bin="$bin.exe"
           work="$(mktemp -d)"
           cd "$work"
           "$bin" demo --json --out page.html > demo.json
@@ -129,21 +123,14 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-          ARCHIVE: ${{ matrix.archive }}
         run: |
           set -euo pipefail
           ref="${GITHUB_REF_NAME:-dry-run}"
           name="qsv-cli-${ref}-${TARGET}"
-          bin="target/$TARGET/release/qsv-cli"
-          if [ "$TARGET" = "x86_64-pc-windows-msvc" ]; then bin="$bin.exe"; fi
           mkdir -p "dist/$name"
-          cp "$bin" "dist/$name/"
+          cp "target/$TARGET/release/qsv-cli" "dist/$name/"
           cp README.md LICENSE "dist/$name/"
-          if [ "$ARCHIVE" = "zip" ]; then
-            (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null)
-          else
-            tar -czf "dist/$name.tar.gz" -C dist "$name"
-          fi
+          tar -czf "dist/$name.tar.gz" -C dist "$name"
           rm -rf "dist/$name"
           ls -l dist
 

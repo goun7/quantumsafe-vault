@@ -1345,9 +1345,8 @@ tar -xzf qsv-cli-v2026.3.1-x86_64-unknown-linux-gnu.tar.gz
 3. **Machine output:** `--json` prints exactly one document (no banner):
    `schema`, `network`, `tip`, `offline`, absolute `out`, `bytes`,
    `html_sha256`, `address`, `letter_sha256`, `elapsed_ms`.
-4. **Release pipeline** (`.github/workflows/release.yml`): five targets
-   (x86_64/aarch64 Linux, x86_64/aarch64 macOS, x86_64 Windows), each built
-   `--locked`; the binary's `--version` must equal the tag or the release
+4. **Release pipeline** (`.github/workflows/release.yml`): FOUR targets —
+   x86_64/aarch64 Linux and x86_64/aarch64 macOS — each built `--locked`; the binary's `--version` must equal the tag or the release
    fails; every target that can run on its own runner executes the offline
    first run before packaging; one `SHA256SUMS` covers every archive and is
    itself attested. **Provenance, not a maintainer key:** GitHub build
@@ -1357,5 +1356,10 @@ tar -xzf qsv-cli-v2026.3.1-x86_64-unknown-linux-gnu.tar.gz
    binaries is deliberately absent — the key does not belong on a runner —
    and the release body states whether the git tag itself is signed instead
    of implying more.
-5. **Limit:** the archives are unsigned by GPG and the demo keys are public
+5. **Platform limit (measured, not assumed):** Windows is NOT a target. The
+   first release dry run failed to compile there — `qsv-cosigner` uses
+   `std::os::unix` for vsock and signal handling, so the co-signer is
+   Unix-only. The target was removed from the matrix instead of shipped
+   broken; a Windows build would need the enclave transport ported first.
+6. **Limit:** the archives are unsigned by GPG and the demo keys are public
    fixtures. Neither is a security boundary; `STATUS.md` §1–2 draws the line.
