@@ -64,9 +64,11 @@ pub struct VaultLeaves {
 /// stack top first; every element within the 520-byte BIP-342 limit. The
 /// plaintext key never appears in the script or the tree: it is disclosed
 /// ONLY at spend time, from the WOTS+-sealed offline kit, and the on-chain
-/// digest binds the kit's contents cryptographically. The Schnorr check keeps
-/// spend authority classical and universally verifiable (post-Q-Day
-/// survivable at the consensus layer).
+/// digest binds that key cryptographically. HONEST LIMIT (Round 41 audit):
+/// the Schnorr check is CLASSICAL — leaf 4 is a hiding mechanism plus a
+/// SHA-256 hash lock, not a post-quantum signature path. On Q-Day the
+/// revealed key can be forged against, so the WOTS+-sealed offline kit
+/// protects the SECRET until use, not the spend itself.
 pub fn emergency_leaf_script(pk_em: XOnlyPublicKey) -> bitcoin::ScriptBuf {
     use bitcoin::hashes::{sha256, Hash};
     use bitcoin::opcodes::all::{OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_SHA256};

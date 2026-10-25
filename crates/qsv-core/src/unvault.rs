@@ -1,9 +1,13 @@
 //! Two-stage unvault covenant flow (docs/03 §6, Theorem 3).
 //!
-//! Stage 1 (unvault): vault UTXO -> STAGING output (the ONLY permitted
-//! destination at consensus level for this leaf).
-//! Stage 2 (settlement): after `csv_blocks`, staging -> final destination.
-//! During the delay window the recovery leaf can sweep (clawback/veto).
+//! Stage 1 (unvault): vault UTXO -> STAGING output. This is a BUILDER
+//! policy, NOT a consensus rule: taproot scripts cannot constrain outputs and
+//! leaf 1 contains no such constraint, so a hostile signer can pay anyone
+//! (measured in docs/03 §6.1 — the "covenant" is Phase 2, BIP-119-class).
+//! Stage 2 (settlement): from the staging output to the final destination.
+//! The recovery leaf is a single-key path on the VAULT output (usable once
+//! that output is 144 blocks old, then permanently); it cannot reach the
+//! staging output, so it is not a veto window over a settlement in flight.
 
 use bitcoin::absolute::LockTime;
 use bitcoin::hashes::Hash;

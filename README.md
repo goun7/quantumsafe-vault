@@ -22,11 +22,13 @@
 |---|---|---|
 | **Shor's algorithm** breaks classical keys | NUMS (Nothing-Up-My-Sleeve) internal key: key-path spending is **mathematically impossible** | `qsv-core::nums` |
 | **Single-key vaults on Q-Day** | 2-of-2 hybrid: classical Schnorr + a **PQC-gated enclave co-signer** (NIST FIPS 204 ML-DSA-65, real BIP-340) | `qsv-pqc`, `qsv-core::taproot` |
-| **Mempool sniffing / RBF theft** | Two-stage unvault covenant: funds can only move to the Staging UTXO, then a 144-block CSV + clawback | `qsv-core::unvault` |
+| **Mempool sniffing / RBF theft** | Two-stage unvault **builder** (staging output + CSV 144). On-chain output pinning is NOT implemented — taproot scripts cannot constrain outputs; a stolen key pays any address ([docs/03 §6.1](docs/03_taproot_miniscript_vault_architecture.md)) | `qsv-core::unvault` |
 | **Dead keys / inheritance crisis** | Dead Man's Switch: heartbeat self-churn + 26,280-block CSV + 2-of-3 heir threshold | `qsv-core::heartbeat`, `policy`, `heirs` |
 | **Heir identity forgery** | Every heir's classical key is sealed to an ML-DSA-65 identity commitment (fail-closed) | `qsv-core::heirs` |
 
-**Core principle:** spending flows **only through the MAST script path**. Even if a quantum computer breaks the classical keys: (i) it cannot forge the second signature without the enclave's PQC proof (Theorem 1), (ii) it cannot open the key path because the NUMS discrete log is unknown (Theorem 2), (iii) it cannot redirect the covenant outputs (Theorem 3).
+**Core principle:** spending flows **only through the MAST script path**. Even if a quantum computer breaks the classical keys: (i) it cannot forge the second signature without the enclave's PQC proof (Theorem 1), (ii) it cannot open the key path because the NUMS discrete log is unknown (Theorem 2), (iii) it cannot redirect the unvault outputs — **builder policy, not consensus**
+(Theorem 3 as originally stated is not implemented; see
+[docs/03 §6.1](docs/03_taproot_miniscript_vault_architecture.md)).
 
 ---
 

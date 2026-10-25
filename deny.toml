@@ -43,10 +43,26 @@ yanked = "deny"
 # extraction path runs on archives fetched over HTTPS from
 # bitcoincore.org inside test runs, never on adversarial input.
 # Re-evaluate at the next harness bump (the handover pack's release steps).
+#
+# ROUND 41 (25 October 2026) — RUSTSEC-2026-0387 (crypto-bigint 0.5.5,
+# "multiple timing variability issues", published 2026-10-23, i.e. two days
+# AFTER the last green run). The crate enters the graph through exactly one
+# edge: frost-secp256k1-tr 3.0.0 → k256 0.13.4 → elliptic-curve 0.13.8. The
+# fixed line is crypto-bigint >= 0.7.6, which k256 0.13 cannot consume; k256
+# 0.14 exists but the newest frost-secp256k1-tr (3.0.0) pins 0.13. The MAIN
+# vault spend path does not touch it — that path signs through the
+# libsecp256k1 `secp256k1` bindings (constant-time C, independently audited).
+# Blast radius: the FROST threshold ceremony (inheritance kit / frost-spend),
+# which each holder runs on their own machine; the advisory class is
+# timing-variability observable only by a local attacker timing the victim's
+# signing loop. Ignored here AND as `cargo audit --ignore` in ci.yml and
+# scripts/round_gate.sh (byte-identical reasoning, three homes). Re-evaluate
+# the moment frost-secp256k1-tr depends on k256 >= 0.14.
 ignore = [
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0387",
 ]
 
 [licenses]

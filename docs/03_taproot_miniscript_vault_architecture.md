@@ -32,12 +32,46 @@ The service that validates the user's local ML-DSA-65 signature and returns the 
 
 ## 6. Two-stage covenant cancelling mempool sniffing
 
-Even an attacker holding the user's classical key with a quantum computer cannot steal the funds:
+**Status of this section: the mechanism is a convention, not a covenant — see §6.1.**
+Taproot scripts cannot constrain a transaction's outputs. What this repository
+actually provides is a BUILDER that pays the single staging output, plus four
+independent spending paths; a stolen key can broadcast a transaction that pays
+anyone. The paragraph below is the INTENDED Phase-2 design (CTV/APO-class
+covenants), not the behaviour of this tree.
 
-1. **Stage 1 (unvault):** funds may leave the vault **only** to the single staging address; no other output is consensus-valid.
-2. **Stage 2 (CSV 144):** the staging output is locked for 144 blocks (~24 h), giving the owner a clawback window through the recovery leaf.
+1. **Stage 1 (unvault, builder-enforced):** `unvault::build_unvault_tx`
+   constructs exactly one output, the staging script. Consensus does not
+   enforce this: leaf 1 is `<pk_user> CHECKSIGVERIFY <pk_enclave> CHECKSIG`
+   with no output constraint, so a hostile builder can pay any address.
+2. **Stage 2 (CSV 144, mislabelled as a window):** the recovery leaf is
+   `<144> CSV DROP <pk_recovery> CHECKSIG` on the VAULT output. It becomes
+   available 144 blocks after each refresh and then stays available forever;
+   it cannot reach the staging output at all, which is a plain single-key
+   script. There is no veto window in flight.
 
-A mempool sniffer who replaces the transaction can only redirect coins *into the same cage*; the RBF race is unwinnable because both candidates pay the same pinned destination. The 144-block window plus the veto window (4,320 blocks) is the operational margin documented in Module 10.
+### 6.1. Correction (Round 41 audit): what the scripts do and do not enforce
+
+Measured, not argued:
+
+- **No output pinning.** A transaction spending leaf 1 with a valid
+  user+enclave witness and paying an arbitrary attacker address is ACCEPTED by
+  `libbitcoinconsensus` (`VERIFY_ALL_PRE_TAPROOT | VERIFY_TAPROOT`). Probe:
+  build the dishonest unvault, sign it with the two demo keys, call
+  `consensus::verify_input` → `Ok(())`.
+- **No clawback.** The recovery key can spend the vault output (after 144
+  blocks of output age, i.e. almost always); it has no path to the staging
+  output and no way to cancel a settlement.
+- **No single-veto window.** `dashboard::vault_status` counts
+  `144 - age` and the console prints it as "the sweep path stays open this
+  long"; the script's semantics are the opposite — the path OPENS at 144 and
+  never closes. The estate letter's "Clawback veto window: first 144 blocks
+  after unvault" describes a mechanism that does not exist.
+
+Consequence for the threat model: with a stolen user key and quantum-forged
+enclave co-signature, the attacker pays themselves directly. The
+mempool-sniffing/RBF argument above therefore does not hold for this tree.
+A real covenant needs `OP_CTV` (BIP-119) or an equivalent consensus rule; the
+Phase-2 plan in [`docs/11`](11_p2mr_migration_plan.md) has to carry it.
 
 ## 7. BIP-360 (P2MR) and roadmap alignment (February 2026)
 

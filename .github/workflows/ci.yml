@@ -161,7 +161,12 @@ jobs:
     # compiled on x86_64/aarch64) and RUSTSEC-2026-0367/0368/0369 (zip:
     # BUILD-time-only dep of the bitcoind TEST harness, fixed line
     # >=9.0.0 unreachable — the newest harness release 0.42.0 still
-    # requires ^0.6.6; full reasoning + re-evaluation rule in deny.toml).
+    # requires ^0.6.6; full reasoning + re-evaluation rule in deny.toml) and
+    # RUSTSEC-2026-0387 (crypto-bigint 0.5.5 timing variability, published
+    # 2026-10-23): reached ONLY by the FROST path (frost-secp256k1-tr 3.0.0 →
+    # k256 0.13.4), whose newest release still pins the pre-0.7 bigint line;
+    # the vault spend path signs through the libsecp256k1 bindings instead.
+    # Re-evaluate when frost-secp256k1-tr depends on k256 >= 0.14.
     # Same flags in scripts/round_gate.sh (gate equality).
     # cargo-deny enforces the license
     # whitelist/bans/sources policy; the secret scan fails on
@@ -173,7 +178,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-audit
-      - run: cargo audit --ignore RUSTSEC-2023-0089 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369
+      - run: cargo audit --ignore RUSTSEC-2023-0089 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369 --ignore RUSTSEC-2026-0387
       - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny check
       - run: bash scripts/secret_scan.sh

@@ -233,7 +233,7 @@ footer {{ margin-top:28px; color:var(--muted); font-size:11.5px; border-top:1px 
 <h2>The three clocks</h2>
 <div class="grid">
 <div class="card"><div class="k">Heartbeat (self-churn)</div><div class="v {hb_class}">{hb_state}</div><div class="d">{hb_blocks} blocks left · refresh ≈ {hb_date}</div></div>
-<div class="card"><div class="k">Recovery window (CSV 144)</div><div class="v">{clawback_blocks}</div><div class="d">blocks left · the sweep path stays open this long</div></div>
+<div class="card"><div class="k">Recovery key (CSV 144)</div><div class="v">{clawback_blocks}</div><div class="d">blocks until the single recovery key can spend · then it never expires</div></div>
 <div class="card"><div class="k">Inheritance (CSV 26,280)</div><div class="v {inh_class}">{inh_state}</div><div class="d">{inh_blocks} blocks left · opens ≈ {inh_date}</div></div>
 </div>
 

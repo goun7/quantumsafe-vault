@@ -54,7 +54,10 @@ HNDL is far more destructive on a blockchain than in ordinary communications: ci
 
 1. **NUMS internal key ⇒ key-path cancellation:** the internal key is a SHA-256 output, not a curve point with a known discrete log; Shor has nothing to solve (Theorem 2).
 2. **PQC-gated second signature:** the enclave releases its Schnorr key only behind a fail-closed ML-DSA-65 verification (Theorem 1).
-3. **Path-pinned funds:** unvault outputs are consensus-pinned to a single staging address (Theorem 3).
+3. **Path policy (off-chain, corrected Round 41):** the unvault BUILDER pays a
+   single staging address; the scripts do not constrain outputs, so the
+   network does not enforce it (see [`docs/03`](03_taproot_miniscript_vault_architecture.md)
+   §6.1).
 4. **Chain-observable inheritance:** heartbeat dead man's switch + 2-of-3 heirs (Theorem 4).
 5. **Consensus-level proof:** every construction is verified by libbitcoinconsensus, not by our own code alone (Theorem 5).
 

@@ -39,6 +39,10 @@ The gate (14 legs) runs both locally and on GitHub Actions. A green run means
 | **No production TEE provisioning.** Attestation is simulated in development mode (`--features nsm` carries the real NSM ioctl path but has not run on hardware) | The enclave security boundary is unproven |
 | **No measured side-channel resistance** | No claim against timing/cache attacks |
 | **No second "proof-of-life" channel.** If the heartbeat is missed, heirs can spend after 26,280 blocks | Premature-inheritance risk by design |
+| **No on-chain covenant.** Output pinning and the 144-block veto window exist only in this repository's transaction builder; leaf 2 is a permanent single-key path on the vault output and cannot reach the staged output | A stolen key pays any address; the mempool-sniffing/RBF claim does not hold ([docs/03 §6.1](docs/03_taproot_miniscript_vault_architecture.md)) |
+| **Leaf 4, the advertised "Q-Day escape route", requires a classical Schnorr signature.** The WOTS+ seal protects the offline kit, not the spend | The post-quantum property is hiding + SHA-256 lock, not a PQ signature on-chain |
+| **The PQC gate accepts any ML-DSA-65 key.** The enclave verifies the presented proof against the presented key; no per-vault identity is pinned | A Q-Day attacker generates their own key, obtains the co-signature, and still needs only the classical user key — the gate does not close that gap |
+| **FROST arithmetic is on a flagged bigint.** `crypto-bigint 0.5.5` (RUSTSEC-2026-0387, timing variability) is pinned by `k256 0.13` inside `frost-secp256k1-tr 3.0.0`; the fixed line needs `k256 0.14` | The threshold ceremony's constant-time guarantee is upstream-blocked (documented ignore in `deny.toml`) |
 | **No insurance and no legal opinion.** The letter is not a will | Local succession law still applies |
 | **Single maintainer** | No continuity guarantee |
 

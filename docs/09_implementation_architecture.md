@@ -73,7 +73,7 @@ Network-free, in-memory end-to-end scenarios plus live surfaces: `vault-setup` (
 | 5 | 2-of-2 hybrid witness satisfies | Theorem 1 |
 | 6 | PQC round trip / forge rejection / fail-closed | FIPS 204 |
 | 7 | Enclave gate refuses an invalid PQC proof | Theorem 1 |
-| 8 | Unvault output is forced to staging | Theorem 3 |
+| 8 | Unvault output is forced to staging | Builder only — NOT consensus (docs/03 §6.1) |
 | 9 | CSV 144 / 26,280 encoding correctness | BIP-68/112 |
 | 10 | 2-of-3 heir threshold + PQC commitment parity | Doc 04 §5–6 |
 | 11 | WOTS+ size constants (67×32) + round trip + tamper | Doc 02 §4 |

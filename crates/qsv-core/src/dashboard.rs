@@ -27,7 +27,9 @@ pub struct VaultStatus {
     pub blocks_until_refresh: u32,
     /// Blocks remaining until the inheritance leaf activates (0 = open).
     pub blocks_until_inheritance: u32,
-    /// Blocks remaining until the recovery clawback window closes (0 = open).
+    /// Blocks until leaf 2 — the SINGLE recovery key — becomes spendable
+    /// (0 = spendable now, and it stays spendable). The CSV OPENS this path;
+    /// it does not close a window (Round 41 audit correction, docs/03 §6.1).
     pub blocks_until_clawback_close: u32,
     /// Calendar projections the operator can plan against.
     pub dates: TimelineDates,
@@ -105,7 +107,7 @@ pub fn render(s: &VaultStatus, tip: u32, vault_address: &str) -> StatusLines {
         heartbeat: format!("Heartbeat [{hb_state}]: {hb_detail}"),
         inheritance: format!("Inheritance [{inh_state}]: {inh_detail}"),
         clawback: format!(
-            "Recovery clawback window: {} blk remaining",
+            "Recovery key (CSV 144): spendable in {} blk, then permanently — single-key path on the vault output, cannot reach the staged output",
             s.blocks_until_clawback_close
         ),
         policy: format!(

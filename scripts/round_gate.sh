@@ -186,9 +186,12 @@ leg capacity-gate 'CAPACITY GATE OK' bash scripts/capacity_gate.sh
 # + RUSTSEC-2026-0367/0368/0369 (zip — build-only dep of the bitcoind
 # TEST harness; fixed line >=9.0.0 is unreachable while the newest
 # harness release requires ^0.6.6 — reasoning + re-evaluation rule in
-# deny.toml; Round 36 bumped the harness to 0.42.0 and re-checked).
+# deny.toml; Round 36 bumped the harness to 0.42.0 and re-checked)
+# + RUSTSEC-2026-0387 (crypto-bigint 0.5.5, timing variability; FROST-only:
+# frost-secp256k1-tr 3.0.0 pins k256 0.13, the sold fix needs k256 0.14 —
+# same ignore, same reason, at all three homes).
 leg security-audit 'advisories ok|SECRET SCAN OK' bash -c \
-    'cargo audit --ignore RUSTSEC-2023-0089 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369 && cargo deny check && bash scripts/secret_scan.sh'
+    'cargo audit --ignore RUSTSEC-2023-0089 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369 --ignore RUSTSEC-2026-0387 && cargo deny check && bash scripts/secret_scan.sh'
 
 # 8. fuzz: six parsers (needs nightly — fuzz_gate.sh resolves it
 # itself; skipped explicitly via GATE_SKIP=fuzz). The window is CI's

@@ -49,6 +49,35 @@ version line is calendar-based (`vYYYY.M.P`), matching the workspace
   an `Encode` error, hiding the only verdict that means "the network would
   refuse this"; the multi-input path now keeps `ScriptFailed`.
 
+### Fixed — documentation corrected against measured behaviour (Round 41 audit)
+
+- **docs/03 §6.1 (new):** the "two-stage covenant" is a BUILDING policy, not a
+  consensus rule. A leaf-1 spend paying an arbitrary attacker address is
+  ACCEPTED by `libbitcoinconsensus` (probe: `Ok(())`), because tapscript cannot
+  constrain outputs. The recovery leaf is a single-key path on the vault
+  output that OPENS 144 blocks after each refresh and never closes; it cannot
+  reach the staged output, so there is no veto window in flight. The
+  corresponding claims in
+  `docs/01`, `docs/09`, `README.md`, `PAPER_EN.md` and the `unvault`/
+  `taproot` docstrings are corrected in place.
+- **The three clocks told the operator the opposite of the script:**
+  `dashboard`/`console` printed the 144-block value as a window "staying open"
+  while the CSV opens that path, and the estate letter promised a "clawback
+  veto window" that does not exist. All three now describe the actual rule.
+- **Leaf 4 is not a post-quantum signature path:** it is a SHA-256 key
+  commitment plus a classical BIP-340 check. The WOTS+ seal protects the
+  offline kit, not the spend; `taproot.rs`, the estate letter and `STATUS.md`
+  now say so.
+- **New `STATUS.md` gaps:** no on-chain covenant; leaf 4's classical
+  signature; the PQC gate accepts any ML-DSA-65 key (no per-vault identity
+  pin); FROST's `crypto-bigint` advisory.
+- **RUSTSEC-2026-0387 / -0385:** the advisory DB gained two entries two days
+  after the last green run. `ctutils` was bumped 0.4.2 → 0.4.5 (fixable);
+  `crypto-bigint 0.5.5` is pinned by `frost-secp256k1-tr 3.0.0 → k256 0.13`,
+  whose fixed line needs `k256 0.14` — documented ignore with the reasoning
+  and the re-evaluation trigger at all three homes (`deny.toml`, `ci.yml`,
+  `round_gate.sh`).
+
 ### Added — `docs-audit`, the single English edition (Round 40)
 
 - **One published edition.** `docs/en/NN_*.md` became `docs/NN_*.md`; the

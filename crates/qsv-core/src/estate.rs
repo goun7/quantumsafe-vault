@@ -90,24 +90,28 @@ pub fn estate_letter(inp: &EstateLetterInput<'_>) -> String {
          Output key (x-only):  {output_key}\n\
          Internal key (NUMS):  {internal_key}\n\
          Merkle root:          {merkle}\n\
-         The NUMS internal key is provably unspendable (nothing-up-my-sleeve);\n\
+         The NUMS internal key has no known discrete log (nothing-up-my-sleeve;\n\
+         a SHA-256 preimage assumption, not a proof);\n\
          every spend is a script-path spend inside the tree committed by the\n\
          merkle root above.\n\
          \n\
          2. SPENDING RULES (MAST leaves, all consensus-enforced)\n\
          Leaf 1 · normal hybrid spend (2-of-2 classical):\n               {normal_hex}\n\
-         Leaf 2 · clawback / cold sweep, CSV {recovery_commas} blocks (≈24 h):\n               {recovery_hex}\n\
+         Leaf 2 · recovery / cold sweep (ONE key), usable {recovery_commas} blocks (≈24 h) after each refresh:\n               {recovery_hex}\n\
          Leaf 3 · inheritance, CSV {inheritance_commas} blocks (≈180 d) + heir threshold:\n               {inheritance_hex}\n\
-         Leaf 4 · post-Q-Day emergency kit (commit-reveal):\n               {emergency_hex}\n\
-         Leaf 4 discloses its destination key only inside the WOTS+-sealed\n\
-         offline kit (RFC 8391, n=32, w=16, SHA-256 only); the on-chain digest\n\
-         binds the kit's contents. Witness elements stay ≤ 520 B (BIP-342).\n\
+         Leaf 4 · emergency kit (SHA-256 key commitment + classical Schnorr):\n               {emergency_hex}\n\
+         Leaf 4 reveals its destination key only from the offline kit; the\n\
+         on-chain digest binds that key. The signature it requires is still\n\
+         classical BIP-340: leaf 4 is a HIDING mechanism, not a post-quantum\n\
+         signature path. Witness elements stay ≤ 520 B (BIP-342).\n\
          \n\
          3. TIME CONSTANTS\n\
          Heartbeat refresh cadence: every 12,960 blocks (≈90 d) — resets the\n\
          inheritance clock; ran by scheduler, zero human action.\n\
          Inheritance lock: {inheritance_commas} blocks after last refresh.\n\
-         Clawback veto window: first {recovery_commas} blocks after unvault.\n\
+         Recovery key: usable once the vault output is {recovery_commas} blocks old,\n\
+         then permanently. It cannot cancel or redirect a staged spend, and it\n\
+         is a single key — there is no veto window in flight (docs/03 §6.1).\n\
          \n\
          4. WHO CAN ACT (heir registry, fail-closed PQC commitments)\n\
          {heirs_block}\
