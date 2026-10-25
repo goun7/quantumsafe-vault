@@ -4,9 +4,14 @@
 
 ## 1. Build and first run
 
+No Rust toolchain is needed to TRY it: prebuilt archives land on Releases
+(D2, §4.65) — download → `bash scripts/verify_release.sh …` → `qsv-cli demo`
+→ `qsv-demo.html`. From source:
+
 ```bash
 cargo build --release
-cargo test --workspace                       # 169 tests, two configurations
+cargo test --workspace                       # full matrix; current count: STATUS.md §1
+cargo run -p qsv-cli -- demo                 # offline first run: one page, no keys
 cargo run -p qsv-cli -- constants            # CSV timings, FIPS 204 sizes, NUMS seed text
 ```
 
@@ -1313,3 +1318,44 @@ qsv-cli console --descriptor 'rawtr(…)#…'        # VERIFIES; mismatch = exit
    `qsv-console/v1` schema.
 4. **Limit:** demo keys are used (reference implementation); real vaults need
    production key provisioning and an independent audit — `STATUS.md` §2.
+
+### 4.65. First run and prebuilt releases (Round 41 · D2): `demo`
+
+Everything up to here assumed a Rust toolchain. D2 removes that assumption:
+one download, one command, one page.
+
+```bash
+bash scripts/verify_release.sh qsv-cli-v2026.3.1-x86_64-unknown-linux-gnu.tar.gz \
+     --repo <owner>/<repo>          # exit 0 verified · 1 refused · 2 incomplete
+tar -xzf qsv-cli-v2026.3.1-x86_64-unknown-linux-gnu.tar.gz
+./qsv-cli demo                      # → ./qsv-demo.html
+./qsv-cli demo --out page.html --network regtest --tip 1000
+./qsv-cli demo --json               # ONE bare document, schema qsv-demo/v1
+```
+
+1. **Offline by construction:** `demo` contacts nothing and signs nothing. The
+   page is the SAME renderer as `console` (§4.64) — one builder, so the demo
+   cannot drift from the surface it introduces; the test
+   `demo_and_console_render_the_same_page_for_the_same_inputs` pins that as
+   byte equality. Heights are illustrative, and the demo label says so on the
+   page itself.
+2. **Artifact before claim:** the command writes the page, READS IT BACK, and
+   only then reports size and SHA-256; an unwritable path exits **1** with
+   `cannot write …` — never a success line without the file.
+3. **Machine output:** `--json` prints exactly one document (no banner):
+   `schema`, `network`, `tip`, `offline`, absolute `out`, `bytes`,
+   `html_sha256`, `address`, `letter_sha256`, `elapsed_ms`.
+4. **Release pipeline** (`.github/workflows/release.yml`): five targets
+   (x86_64/aarch64 Linux, x86_64/aarch64 macOS, x86_64 Windows), each built
+   `--locked`; the binary's `--version` must equal the tag or the release
+   fails; every target that can run on its own runner executes the offline
+   first run before packaging; one `SHA256SUMS` covers every archive and is
+   itself attested. **Provenance, not a maintainer key:** GitHub build
+   provenance (Sigstore keyless) lets anyone run
+   `gh attestation verify <archive> --repo <owner>/<repo>` and learn which
+   workflow, commit and tag produced the file. A GPG signature over the
+   binaries is deliberately absent — the key does not belong on a runner —
+   and the release body states whether the git tag itself is signed instead
+   of implying more.
+5. **Limit:** the archives are unsigned by GPG and the demo keys are public
+   fixtures. Neither is a security boundary; `STATUS.md` §1–2 draws the line.

@@ -5,7 +5,37 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 version line is calendar-based (`vYYYY.M.P`), matching the workspace
 `Cargo.toml` version and the docs banner (`v2026.3`).
 
-## [v2026.3.1] — 2026-10-18/21 (Rounds 29–40)
+## [v2026.3.1] — 2026-10-18/25 (Rounds 29–41)
+
+### Added — first run without Rust (Round 41 · roadmap D2)
+
+- **`qsv-cli demo`**: one command, no arguments, no node, no network, no keys.
+  It renders the console page through the SAME builder as `console` (a test
+  pins byte equality, so the demo cannot drift from the surface it
+  introduces), writes it, READS IT BACK, and only then reports size + SHA-256;
+  an unwritable path is exit 1 `cannot write …`. `--json` emits one bare
+  `qsv-demo/v1` document (absolute `out`, `bytes`, `html_sha256`, address,
+  letter hash, `elapsed_ms`). Measured: 6–8 ms, 9,272-byte page (release).
+- **Release pipeline** (`.github/workflows/release.yml`, tag `v*` or manual
+  dry run): five targets — x86_64/aarch64 Linux, x86_64/aarch64 macOS,
+  x86_64 Windows — each built `--locked`; the binary's `--version` must equal
+  the tag; every target that can run on its own runner executes the offline
+  first run before packaging; one `SHA256SUMS` over all archives, recomputed
+  from disk, plus GitHub build provenance (Sigstore keyless) for the archives
+  and the manifest. No maintainer key on a runner; the release body says
+  whether the git tag itself is signed instead of implying it.
+- **`scripts/verify_release.sh`**: checksum + `gh attestation verify`; exit 0
+  verified · 1 refused · 2 incomplete (a check that cannot run is never a
+  pass).
+- **English-only repair:** the console page still carried three Turkish UI
+  labels (an address row label, a heartbeat status word, a letter-hash
+  caption) that the docs wall never looked at — the wall scans `docs/`, not
+  renderer strings. The page is now fully English, and the wall sweeps
+  `crates/`, `scripts/` and `.github/` too, so the next leak is caught by a
+  test instead of by a reader. The widened sweep immediately found two more:
+  the faucet script logged its claim lines in Turkish (an address label and a
+  missing-value message).
+- Test count 507 → **512** (4 first-run + 1 source-level wall).
 
 ### Added — `docs-audit`, the single English edition (Round 40)
 

@@ -1,0 +1,244 @@
+name: release
+
+# D2 (ROADMAP.md §2): prebuilt, single-file `qsv-cli` archives so a new user
+# never needs Rust — download → `qsv-cli demo` → a console page.
+#
+# What this pipeline PROVES, and what it does not:
+#   * every archive is built here, from this commit, with `--locked`;
+#   * the binary's `--version` must equal the tag, or the release fails
+#     (an archive named vX that reports Y is worse than no archive);
+#   * the offline first run is executed for every target that can run on its
+#     own runner — a "builds but does not start" binary never ships;
+#   * one SHA-256 manifest covers every archive and is itself attested;
+#   * GitHub build provenance (Sigstore keyless) is generated for each
+#     archive: `gh attestation verify <archive> --repo <owner/repo>` proves
+#     which workflow, commit and tag produced it — verification needs no
+#     maintainer key.
+#
+# It does NOT produce a GPG signature over the binaries: that requires the
+# maintainer's private key, which does not belong on a runner. A signed git
+# tag (`git tag -s`) is still the human-rooted anchor; when the tag is
+# unsigned the release body says so instead of implying otherwise.
+#
+#   push a tag:        git tag -s v2026.3.2 -m "…" && git push origin v2026.3.2
+#   rehearse (no release): Actions → release → Run workflow (dry_run: true)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + attest only; do not create a GitHub Release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write # keyless signing (Sigstore)
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `native` = the runner can EXECUTE the binary, so the offline first
+          # run is smoke-tested instead of assumed.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            native: true
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            native: true
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            native: false # cross-built on the arm64 runner
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            native: true
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            native: true
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build (locked, release)
+        run: cargo build --release --locked -p qsv-cli --target ${{ matrix.target }}
+
+      - name: The binary's version must equal the tag
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          bin="target/$TARGET/release/qsv-cli"
+          [ "$TARGET" = "x86_64-pc-windows-msvc" ] && bin="$bin.exe"
+          got="$("$bin" --version | awk '{print $2}')"
+          want="${REF_NAME#v}"
+          # A workflow_dispatch run on a branch has no version-shaped ref:
+          # the check only binds when the ref IS a release tag.
+          if [ "${REF_NAME#v}" != "$REF_NAME" ] && [ "$got" != "$want" ]; then
+            echo "::error::binary reports $got but the tag says $want"
+            exit 1
+          fi
+          echo "version: $got"
+
+      - name: Offline first run must work (native targets only)
+        if: matrix.native
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/target/$TARGET/release/qsv-cli"
+          [ "$TARGET" = "x86_64-pc-windows-msvc" ] && bin="$bin.exe"
+          work="$(mktemp -d)"
+          cd "$work"
+          "$bin" demo --json --out page.html > demo.json
+          grep -q '"schema": "qsv-demo/v1"' demo.json
+          grep -q '"offline": true' demo.json
+          test -s page.html
+          grep -q 'offline rehearsal' page.html
+          if grep -q '<script' page.html; then echo "::error::page is not script-free"; exit 1; fi
+          # Machine output must be a SINGLE bare document (no banner).
+          case "$(head -c 1 demo.json)" in '{') ;; *) echo "::error::demo --json leaked a banner"; exit 1;; esac
+          echo "first run OK: $(grep -o '"bytes": [0-9]*' demo.json)"
+
+      - name: Package (one archive, one file to download)
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF_NAME:-dry-run}"
+          name="qsv-cli-${ref}-${TARGET}"
+          bin="target/$TARGET/release/qsv-cli"
+          if [ "$TARGET" = "x86_64-pc-windows-msvc" ]; then bin="$bin.exe"; fi
+          mkdir -p "dist/$name"
+          cp "$bin" "dist/$name/"
+          cp README.md LICENSE "dist/$name/"
+          if [ "$ARCHIVE" = "zip" ]; then
+            (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null)
+          else
+            tar -czf "dist/$name.tar.gz" -C dist "$name"
+          fi
+          rm -rf "dist/$name"
+          ls -l dist
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qsv-cli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  manifest:
+    name: SHA-256 manifest + provenance
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: One manifest over every archive, recomputed from disk
+        run: |
+          set -euo pipefail
+          cd dist
+          ls -l
+          sha256sum -b qsv-cli-* > SHA256SUMS
+          cat SHA256SUMS
+          # Recompute: the manifest must be a measurement, not a transcription.
+          sha256sum -c SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    name: GitHub Release
+    needs: [build, manifest]
+    if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || inputs.dry_run == false)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # `git tag -v` needs the tag object
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Compose the release body (honest about the tag signature)
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cp RELEASE_NOTES.md body.md
+          if git tag -v "$TAG" >/dev/null 2>&1; then
+            echo "" >> body.md
+            echo "_Tag signature: verified with a trusted GPG key._" >> body.md
+          else
+            echo "" >> body.md
+            echo "_Tag signature: none. Integrity of the archives rests on the SHA-256 manifests and the GitHub build provenance below — not on a GPG signature._" >> body.md
+          fi
+          cat >> body.md <<'EOF'
+
+          ## Verify before running
+
+          ```sh
+          sha256sum --check SHA256SUMS
+          gh attestation verify qsv-cli-<tag>-<target>.tar.gz --repo <owner/repo>
+          ```
+
+          Then, with no Rust toolchain installed:
+
+          ```sh
+          ./qsv-cli demo          # writes qsv-demo.html — offline, no node, no keys
+          ./qsv-cli --version
+          ```
+
+          `demo` prints the SHA-256 of the page it wrote and re-reads it from
+          disk before claiming success. Heights on the page are illustrative:
+          nothing was contacted.
+          EOF
+          cat body.md
+      - name: Publish archives + manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --verify-tag --title "QuantumSafe-Vault $TAG" --notes-file body.md

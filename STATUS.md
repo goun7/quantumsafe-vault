@@ -23,8 +23,10 @@ Every row is reproducible with one command or one real-network lap.
 | PSBT → SD card → device signing → import verifies the manifest and every leaf key (fail-closed) | `cargo test -p qsv-cli --test hw_roundtrip` |
 | The estate letter is independently re-derived; a forged byte = exit 1 | `qsv-cli verify-estate --file letter.txt --network signet` |
 | A funded signet lap: funding → rotate → confirmed spend (7/7 honest exit codes) | CHANGELOG v2026.3.1 |
-| 507 tests, 54 mutations (54/54 killed), every product file inside the mutation wall | `bash scripts/round_gate.sh` |
+| 512 tests, 54 mutations (54/54 killed), every product file inside the mutation wall | `bash scripts/round_gate.sh` |
 | One-screen console: three clocks + address + estate letter in a single script-free HTML file; a foreign descriptor is refused | `qsv-cli console --tip 900000 --json` |
+| First run needs no Rust and no node: one command writes the console page, re-reads it from disk and prints its SHA-256 — measured 6–8 ms, 9,272-byte page (release build, warm cache) | `qsv-cli demo` · `cargo test -p qsv-cli --test first_run` |
+| Release archives are attributable: five targets built `--locked`, one `SHA256SUMS`, `--version` must equal the tag, GitHub build provenance per archive | release workflow dry run · `bash scripts/verify_release.sh <archive> --repo <owner>/<repo>` |
 
 The gate (14 legs) runs both locally and on GitHub Actions. A green run means
 **only this list was measured** — never "everything is fine".

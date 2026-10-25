@@ -73,13 +73,13 @@ for i in $(seq 1 "$MAX"); do
     code=$(curl -sS -m 25 -o "$BODY" -w '%{http_code}' \
         -X POST "$BASE/api/request" -H 'Content-Type: application/json' \
         -d "{\"rail\":\"onchain\",\"destination\":\"$addr\",\"amount_sats\":$AMOUNT}" || echo 000)
-    log "claim $i/$MAX → HTTP $code adres=$addr"
+    log "claim $i/$MAX → HTTP $code addr=$addr"
     case "$code" in
         202|200)
             if url=$(claim_url); then
                 if poll "$url"; then got=$((got + 1)); else log "poll failed — loop stopped"; break; fi
             else
-                log "claim_status_url yok: $(cat "$BODY")"; break
+                log "no claim_status_url in the response: $(cat "$BODY")"; break
             fi
             ;;
         429)

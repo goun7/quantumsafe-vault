@@ -502,6 +502,7 @@ const TURKISH_LETTERS: [char; 12] = ['ç', 'Ç', 'ğ', 'Ğ', 'ı', 'İ', 'ö', '
 const TURKISH_WORDS: &[&str] = &[
     "acik",
     "aday",
+    "adres",
     "anahtar",
     "arac",
     "asama",
@@ -535,6 +536,7 @@ const TURKISH_WORDS: &[&str] = &[
     "kilit",
     "kontrol",
     "kural",
+    "mektup",
     "merkez",
     "metin",
     "miktar",
@@ -551,6 +553,7 @@ const TURKISH_WORDS: &[&str] = &[
     "surekli",
     "taban",
     "takim",
+    "tamam",
     "tanim",
     "tarih",
     "taslak",

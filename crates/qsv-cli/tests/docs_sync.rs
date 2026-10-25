@@ -335,3 +335,64 @@ fn the_published_tree_contains_no_turkish_text() {
         );
     }
 }
+
+/// Walk a directory for files a human could read as text; `target/` and
+/// fuzzing build output are not published and are skipped.
+fn collect_text_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        if name == "target" || name == "node_modules" {
+            continue;
+        }
+        if path.is_dir() {
+            collect_text_files(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
+/// The English-only wall covers the CODE, not just `docs/` (Round 41). The
+/// console page shipped three Turkish labels — an address row, a heartbeat
+/// status word, a letter-hash caption — for a whole release because this file
+/// only swept the numbered modules: renderer strings, CLI help, scripts and
+/// workflow comments are published artifacts too. Binary fixtures
+/// (attestation DER/COSE, keys) are skipped by the UTF-8 read; the one file
+/// allowed to hold Turkish is the detector itself, which ships the marker
+/// table (and this comment names the leak without reproducing it).
+#[test]
+fn product_sources_carry_no_turkish_text() {
+    let docs = docs_dir();
+    let root = docs.parent().expect("docs/ has a parent").to_path_buf();
+    let mut files = Vec::new();
+    for dir in ["crates", "scripts", ".github"] {
+        collect_text_files(&root.join(dir), &mut files);
+    }
+    assert!(
+        files.len() > 50,
+        "expected the product tree, saw {} files",
+        files.len()
+    );
+    let mut checked = 0;
+    for path in files {
+        if path.ends_with("qsv-core/src/docs.rs") {
+            continue; // the detector's own marker table and fixtures
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue; // binary fixture
+        };
+        let hits = turkish_markers(&text);
+        assert!(
+            hits.is_empty(),
+            "{} carries Turkish text (the published tree is English-only): {}",
+            path.display(),
+            hits.join("; ")
+        );
+        checked += 1;
+    }
+    assert!(checked > 40, "only {checked} text files were audited");
+}

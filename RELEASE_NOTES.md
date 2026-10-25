@@ -5,6 +5,18 @@ release: `v2026.3.0` (Rounds 7–28). Full entries: `CHANGELOG.md`._
 
 ## Highlights
 
+**First run without Rust (D2).** `qsv-cli demo` is now the front door: no
+arguments, no node, no network, no keys — it writes the watch-only console
+page, re-reads it from disk and prints its SHA-256 (6–8 ms, 9,272 B). The page
+comes from the SAME builder as `console`, and a test pins byte equality so the
+demo cannot drift from the surface it introduces. Prebuilt single-file
+archives cover x86_64/aarch64 Linux, x86_64/aarch64 macOS and x86_64 Windows:
+`--version` must equal the tag, every target that can run on its own runner
+executes the offline first run before packaging, one `SHA256SUMS` covers all of
+them, and GitHub build provenance makes each archive attributable to this
+workflow, commit and tag. No GPG key sits on a runner; the release body says
+whether the tag itself is signed instead of implying it.
+
 **The one-command local gate (Round 31).** CI being one billing outage away
 from blind no longer matters: `bash scripts/round_gate.sh` is a
 byte-for-byte mirror of the eleven CI jobs plus the Round-32 sweep leg —
@@ -56,7 +68,7 @@ to **54/54 KILLED** (M44–M54 added since v2026.3.0's wall), the
 automated sweep holds every product file to a written wall (37 files —
 hand-covered, mechanically mutated, or an allowlist with a reason), the
 coverage floor holds at **97.75% lines / 83.30% functions** (≥97.5/82.0),
-507 tests ×2 configurations with the live-bitcoind e2e in both, six
+512 tests ×2 configurations with the live-bitcoind e2e in both, six
 fuzzers at CI's 120-second window, and a single English documentation
 edition held to eight walls: the module set, English titles, monotonic
 sections, subsections that belong to a section, balanced fences (it already

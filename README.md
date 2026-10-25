@@ -12,7 +12,7 @@
 >
 > *Status: reference implementation for testnet/signet. **Not audited, not production-ready — do not use with real funds.***
 
-[![version](https://img.shields.io/badge/v2026.3.1-blue)](CHANGELOG.md) [![tests](https://img.shields.io/badge/tests-507-green)]() [![clippy](https://img.shields.io/badge/clippy--clean-green)]() [![mutation](https://img.shields.io/badge/mutation--audit-54%2F54%20killed-green)]() [![coverage](https://img.shields.io/badge/coverage-97.57%25%20lines%20%2F%2083.25%25%20funcs-green)]() [![FIPS 204](https://img.shields.io/badge/PQC-ML--DSA--65-blue)]() [![BIP-341/342/379](https://img.shields.io/badge/Bitcoin-Taproot%20%2B%20Miniscript-orange)]() [![e2e](https://img.shields.io/badge/e2e-bitcoind%20v28.2-green)]()
+[![version](https://img.shields.io/badge/v2026.3.1-blue)](CHANGELOG.md) [![tests](https://img.shields.io/badge/tests-512-green)]() [![clippy](https://img.shields.io/badge/clippy--clean-green)]() [![mutation](https://img.shields.io/badge/mutation--audit-54%2F54%20killed-green)]() [![coverage](https://img.shields.io/badge/coverage-97.57%25%20lines%20%2F%2083.25%25%20funcs-green)]() [![FIPS 204](https://img.shields.io/badge/PQC-ML--DSA--65-blue)]() [![BIP-341/342/379](https://img.shields.io/badge/Bitcoin-Taproot%20%2B%20Miniscript-orange)]() [![e2e](https://img.shields.io/badge/e2e-bitcoind%20v28.2-green)]()
 
 ---
 
@@ -32,17 +32,43 @@
 
 ## Quick start
 
+### 60 seconds, no Rust toolchain
+
+Download the archive for your platform from [Releases](../../releases) (built
+by [`.github/workflows/release.yml`](.github/workflows/release.yml), one file
+per target, one `SHA256SUMS`, GitHub build provenance):
+
+```bash
+bash scripts/verify_release.sh qsv-cli-v2026.3.1-<target>.tar.gz --repo <owner>/<repo>
+tar -xzf qsv-cli-v2026.3.1-<target>.tar.gz
+./qsv-cli demo        # writes qsv-demo.html — offline, no node, no keys
+```
+
+`demo` renders the watch-only console page (three clocks, address, estate
+letter), prints the page's SHA-256 and re-reads it from disk before reporting
+success. Heights are illustrative: no node is contacted and no key is used.
+Everything else in this repository follows the same rule — a command either
+proves its claim with an artifact or says it cannot.
+
+### From source
+
 ```bash
 # Requirement: Rust 1.85+
 cargo build --release
 cargo test --workspace        # full matrix, incl. live bitcoind v28.2 e2e
 cargo test --workspace --features qsv-core/consensus   # + libbitcoinconsensus
+cargo run -p qsv-cli -- demo               # first run, offline
 cargo run -p qsv-cli -- vault-setup        # no network access, fully local demo
 ```
 
 CLI (`clap`):
 
 ```text
+qsv-cli demo [--network signet] [--tip N] [--out page.html] [--json]
+                            # FIRST RUN (roadmap slice D2): one command, no
+                            # arguments, no node, no network — the console page
+                            # + the next three offline commands; --json is ONE
+                            # bare document (schema qsv-demo/v1)
 qsv-cli vault-setup         --network {bitcoin|signet|testnet|regtest}
 qsv-cli vault-descriptor    --network regtest [--json]
                             # watch-only descriptor export (docs/10 §4.59):

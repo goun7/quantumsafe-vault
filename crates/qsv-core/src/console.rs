@@ -164,7 +164,7 @@ pub fn render_html(s: &ConsoleSnapshot) -> String {
     let (hb_state, hb_class) = if s.heartbeat_due {
         ("REFRESH NOW", "warn")
     } else {
-        ("TAMAM", "ok")
+        ("OK", "ok")
     };
     let (inh_state, inh_class) = if s.blocks_until_inheritance == 0 {
         ("OPEN", "warn")
@@ -222,7 +222,7 @@ footer {{ margin-top:28px; color:var(--muted); font-size:11.5px; border-top:1px 
 
 <h2>Identity</h2>
 <table>
-<tr><td>Adres</td><td><code>{address}</code></td></tr>
+<tr><td>Address</td><td><code>{address}</code></td></tr>
 <tr><td>Output key</td><td><code>{output_key}</code></td></tr>
 <tr><td>Merkle root</td><td><code>{merkle}</code></td></tr>
 <tr><td>addr() descriptor</td><td><code>{addr_desc}</code></td></tr>
@@ -239,7 +239,7 @@ footer {{ margin-top:28px; color:var(--muted); font-size:11.5px; border-top:1px 
 
 <h2>Estate letter</h2>
 <pre>{letter}</pre>
-<div class="sub">Mektup SHA-256: <code>{letter_sha}</code></div>
+<div class="sub">Letter SHA-256: <code>{letter_sha}</code></div>
 
 <h2>What this page does NOT protect</h2>
 <ul>

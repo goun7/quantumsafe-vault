@@ -28,7 +28,7 @@ Three rules hold for every slice:
 |---|---|---|---|
 | **D0** | Publish the repo + CI | ✅ done | 14/14 legs green on GitHub Actions; free runners on a public repo |
 | **D1** | **Vault console (one screen)** | ✅ this release | `qsv-cli console` renders the three clocks, address and estate letter in a script-free HTML file; a foreign descriptor exits 1 with empty stdout |
-| **D2** | Setup: signed binaries + one-command demo | next | On a fresh machine, no Rust required: download → `qsv-cli demo` → signet page in 60 seconds |
+| **D2** | Setup: prebuilt archives + one-command demo | ✅ this release | On a machine without Rust: download → `scripts/verify_release.sh` → `qsv-cli demo` → the console page (measured: 6–8 ms, page 9,272 B; archive 5.5 MB); five targets, one `SHA256SUMS`, build provenance, `--version` == tag |
 | **D3** | Premature-inheritance protection | design | Second proof-of-life channel + heir objection window; false-alarm drill under test |
 | **D4** | Read-only monitoring service | external | Descriptor in, monthly alert out; no signature, no key; two independent users to pilot |
 | **D5** | Estate rehearsal kit | external | Lawyer/advisor package: a 90-minute rehearsal script + output checklist |
@@ -40,24 +40,37 @@ D0 and D1 are done in this repository. No slice opens mainnet except D8.
 
 ---
 
-## 2. Next slice: D2 — setup
+## 2. D2 — setup (done in this release)
 
-Today's largest usability obstacle is not cryptography, it is **setup**:
+The largest usability obstacle was never cryptography, it was **setup**:
 
 ```
 Rust 1.85+ → cargo build --release → bitcoind + RPC credentials → two hardware devices
 ```
 
-Target:
+What shipped:
 
-- One **signed, single-file** `qsv-cli` build for Linux/macOS/Windows
-  (GitHub Releases, SHA-256 manifest, signed tag).
-- `qsv-cli demo` — no network, no node: a console page in 60 seconds.
+- **Prebuilt single-file archives** for x86_64/aarch64 Linux, x86_64/aarch64
+  macOS and x86_64 Windows, built `--locked` by
+  [`.github/workflows/release.yml`](.github/workflows/release.yml). The
+  binary's `--version` must equal the tag, and every target that can execute
+  on its own runner runs the offline first run before packaging.
+- **`qsv-cli demo`** — no arguments, no node, no network, no keys: writes the
+  console page, reads it back and prints its SHA-256.
+- **`scripts/verify_release.sh`** — checksum + `gh attestation verify`
+  (Sigstore keyless build provenance). Exit 0 verified, 1 refused,
+  2 incomplete; a check that cannot run is never a pass.
 - `qsv-cli console --descriptor …` already refuses a descriptor that is not
-  this vault's (done in D1).
+  this vault's (D1).
 
-Acceptance: on a clean machine, without installing Rust, one download opens
-the page; the measured time is recorded in [`STATUS.md`](STATUS.md).
+What is deliberately NOT claimed: a GPG signature over the binaries. That
+needs the maintainer's private key, which does not belong on a runner. The
+provenance attestation answers "which workflow, commit and tag built this
+file?"; a signed git tag remains the human-rooted anchor, and the release body
+states whether the tag is signed instead of implying it.
+
+Acceptance (measured, [`STATUS.md`](STATUS.md) §1): archive 5.5 MB → `demo`
+6–8 ms → 9,272-byte page. Download time is the only variable left.
 
 ## 3. D3 — premature-inheritance protection (the real product risk)
 

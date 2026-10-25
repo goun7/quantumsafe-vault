@@ -113,6 +113,26 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// FIRST RUN (roadmap slice D2): one command, no arguments, no node, no
+    /// network — writes the watch-only console page and prints what to do
+    /// next. Rust is only needed to BUILD the binary; the release archives
+    /// ship it prebuilt (release workflow, SHA-256 manifest, build
+    /// provenance). Heights are illustrative because nothing is contacted:
+    /// the page is a rehearsal, clearly labelled as one.
+    Demo {
+        /// Network to render the demo page for.
+        #[arg(long, value_enum, default_value_t = NetworkArg::Signet)]
+        network: NetworkArg,
+        /// Illustrative chain height (offline: no node is contacted).
+        #[arg(long, default_value = "900000")]
+        tip: u32,
+        /// Write the HTML page here (default: ./qsv-demo.html).
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Print exactly ONE JSON document to stdout (no banner, no footer).
+        #[arg(long)]
+        json: bool,
+    },
     /// Generate the printable estate letter (inheritance & emergency
     /// document): vault identification, spending rules, heir registry,
     /// emergency-kit procedure and verification instructions. Zero secrets.
@@ -1336,17 +1356,16 @@ struct ConsoleArgs<'a> {
     json: bool,
 }
 
-fn console_cmd(args: ConsoleArgs<'_>) -> Result<(), String> {
-    let ConsoleArgs {
-        network,
-        tip,
-        last_refresh_block,
-        label,
-        date,
-        descriptor,
-        out,
-        json,
-    } = args;
+/// One builder for both `console` and `demo`: the demo page must never be a
+/// second renderer that could drift from the console it introduces.
+fn console_snapshot(
+    network: bitcoin::Network,
+    tip: u32,
+    last_refresh_block: u32,
+    label: &str,
+    date: Option<&str>,
+    descriptor: Option<&str>,
+) -> Result<qsv_core::console::ConsoleSnapshot, String> {
     let vault = demo_vault()?;
 
     let heir1 = qsv_pqc::PqcIdentity::from_seed(&[11u8; 32]);
@@ -1369,7 +1388,7 @@ fn console_cmd(args: ConsoleArgs<'_>) -> Result<(), String> {
         .map(str::to_string)
         .unwrap_or_else(|| qsv_core::dashboard::epoch_date(tip));
 
-    let snap = qsv_core::console::snapshot(&qsv_core::console::ConsoleInput {
+    qsv_core::console::snapshot(&qsv_core::console::ConsoleInput {
         vault: &vault,
         network,
         tip,
@@ -1378,7 +1397,109 @@ fn console_cmd(args: ConsoleArgs<'_>) -> Result<(), String> {
         date: &date,
         heirs: &heirs,
         descriptor,
-    })?;
+    })
+}
+
+/// The demo label is part of the artifact: a page printed by `demo` must not
+/// be mistakable for the console of a real vault (throwaway demo keys).
+const DEMO_LABEL: &str = "Demo vault — offline rehearsal (throwaway demo keys)";
+
+/// FIRST RUN (roadmap slice D2): no arguments, no node, no network. The page
+/// is written, READ BACK (a demo that announces a page it cannot re-read is
+/// a lie) and followed by the next three offline commands.
+fn demo_cmd(
+    network: bitcoin::Network,
+    tip: u32,
+    out: Option<&std::path::Path>,
+    json: bool,
+) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let snap = console_snapshot(network, tip, tip, DEMO_LABEL, None, None)?;
+    let path = out
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("qsv-demo.html"));
+    let html = qsv_core::console::render_html(&snap);
+    std::fs::write(&path, &html).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    let stored =
+        std::fs::read(&path).map_err(|e| format!("cannot re-read {}: {e}", path.display()))?;
+    if stored != html.as_bytes() {
+        return Err(format!(
+            "{} did not round-trip on disk ({} bytes written, {} read)",
+            path.display(),
+            html.len(),
+            stored.len()
+        ));
+    }
+    let html_sha = file_sha256_hex(html.as_bytes());
+    // Machine consumers get the SAME absolute path the human line prints:
+    // a relative path in the JSON changes meaning with the caller's cwd.
+    let abs_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+
+    if json {
+        let doc = serde_json::json!({
+            "schema": "qsv-demo/v1",
+            "network": network_name(network),
+            "tip": tip,
+            "offline": true,
+            "out": abs_path.display().to_string(),
+            "bytes": html.len(),
+            "html_sha256": html_sha,
+            "address": snap.address,
+            "letter_sha256": snap.letter_sha256,
+            "elapsed_ms": elapsed_ms,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?
+        );
+        return Ok(());
+    }
+
+    let abs = abs_path;
+    println!("\n───── [0] FIRST RUN (offline demo) ──────────────────────────────");
+    println!(
+        "Demo page written: {} ({} bytes, script-free HTML)",
+        path.display(),
+        html.len()
+    );
+    println!(
+        "  network:   {} — no node contacted, heights are illustrative",
+        network_name(network)
+    );
+    println!("  vault:     {}", snap.address);
+    println!("  page:      sha256 {html_sha}");
+    println!("  letter:    sha256 {}", snap.letter_sha256);
+    println!("  elapsed:   {elapsed_ms} ms (render + write + read-back)");
+    println!("  open:      file://{}", abs.display());
+    println!("\nNext (offline; nothing is signed and nothing is broadcast):");
+    println!("  1. open the page: three clocks, address, estate letter");
+    println!(
+        "  2. qsv-cli estate-letter --network {}  > letter.txt",
+        network_name(network)
+    );
+    println!(
+        "  3. qsv-cli verify-estate --file letter.txt --network {}",
+        network_name(network)
+    );
+    println!(
+        "  4. qsv-cli console --descriptor '<paste the addr() line from the page>' — refused unless it IS this vault"
+    );
+    Ok(())
+}
+
+fn console_cmd(args: ConsoleArgs<'_>) -> Result<(), String> {
+    let ConsoleArgs {
+        network,
+        tip,
+        last_refresh_block,
+        label,
+        date,
+        descriptor,
+        out,
+        json,
+    } = args;
+    let snap = console_snapshot(network, tip, last_refresh_block, label, date, descriptor)?;
 
     if json {
         let doc = serde_json::json!({
@@ -6645,6 +6766,7 @@ fn main() {
             | Some(Command::Doctor { json: true, .. })
             | Some(Command::VaultDescriptor { json: true, .. })
             | Some(Command::Console { json: true, .. })
+            | Some(Command::Demo { json: true, .. })
             | Some(Command::DocsAudit { json: true, .. })
     );
     // CAPACITY GATE (docs/10 §4.38): `bench --baseline` validates the
@@ -6708,6 +6830,12 @@ fn main() {
             out: out.as_deref(),
             json,
         }),
+        Some(Command::Demo {
+            network,
+            tip,
+            out,
+            json,
+        }) => demo_cmd(network.into(), tip, out.as_deref(), json),
         Some(Command::EstateLetter {
             network,
             label,
